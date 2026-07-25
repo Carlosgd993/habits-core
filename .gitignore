@@ -1,0 +1,11 @@
+# Supabase CLI local state
+supabase/.branches
+supabase/.temp
+supabase/config.toml
+
+# Secretos / entornos locales
+.env
+.env.*
+!.env.example
+
+.DS_Store
