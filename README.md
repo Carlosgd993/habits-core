@@ -28,12 +28,15 @@ están en `supabase/migrations/`.
 
 ## Verificación tras aplicar
 
-Estas cuatro comprobaciones son el criterio de "ha funcionado". Hazlas con la
-clave **anon**, no con la de servicio.
+Estas comprobaciones son el criterio de "ha funcionado". Hazlas con la clave
+**anon**, no con la de servicio.
 
 ```http
-### 1. La vista responde
+### 1. Las vistas responden
 GET {{url}}/rest/v1/v_today_habits?select=*
+apikey: {{anon}}
+
+GET {{url}}/rest/v1/v_log_habits?select=*
 apikey: {{anon}}
 
 ### 2. La tabla NO responde  (debe dar 401/403 o lista vacía)
@@ -45,9 +48,9 @@ POST {{url}}/rest/v1/habit_checkins
 apikey: {{anon}}
 Content-Type: application/json
 
-{ "habit_id": "<id>", "checkin_date": "2026-07-24", "value": 1 }
+{ "habit_id": "<id>", "checkin_date": "2026-07-27", "value": 1 }
 
-### 4. La función SÍ funciona
+### 4. Las funciones SÍ funcionan
 POST {{url}}/rest/v1/rpc/habit_step
 apikey: {{anon}}
 Content-Type: application/json
@@ -66,10 +69,13 @@ de `20260724120300_rls_contract.sql`.
 │   └── contrato.md              # el contrato de lectura/escritura para los clientes
 └── supabase/
     └── migrations/
-        ├── 20260724120000_time_and_status.sql   # app_today() + statuses.is_done
-        ├── 20260724120100_views_today.sql        # v_today_habits, v_today_tasks
-        ├── 20260724120200_rpc_write.sql           # habit_step/set/undo, (un)complete_task
-        └── 20260724120300_rls_contract.sql        # RLS + grants mínimos a anon
+        ├── 20260724115900_base_tables.sql          # tablas base (DDL documentado en docs/estructura-bd.md)
+        ├── 20260724120000_time_and_status.sql       # app_today() + statuses.is_done
+        ├── 20260724120100_views_today.sql            # v_today_habits (v1), v_today_tasks (v1)
+        ├── 20260724120200_rpc_write.sql              # habit_step/set/undo, (un)complete_task (v1)
+        ├── 20260724120300_rls_contract.sql           # RLS + grants mínimos a anon
+        ├── 20260727120000_schedule_columns.sql       # schedule_type, purpose, task_templates, skipped_time
+        └── 20260727120100_schedule_views_rpc.sql     # vistas y RPCs actualizados al contrato v2
 ```
 
 Las migraciones se aplican en orden por su timestamp. `supabase/config.toml`
@@ -81,15 +87,20 @@ su propio proyecto con `supabase link`.
 Implementado:
 
 - `app_today()` — el único dueño de la fecha
-- `v_today_habits`, `v_today_tasks`
+- `v_today_habits` — hábitos con objetivo que tocan hoy según su `schedule_type`
+- `v_log_habits` — hábitos de solo registro (purpose=log)
+- `v_today_tasks` — ocurrencias pendientes (ni hechas ni omitidas) con vencimiento hoy o antes
 - `habit_step`, `habit_set`, `habit_undo`
-- `complete_task`, `uncomplete_task`
+- `instantiate_task`, `complete_task` (con enganche deslizante), `uncomplete_task`
+- `skip_task`, `unskip_task`
+- `task_templates` — definición reutilizable de tareas
+- Tipos de programación de hábitos: `interval_calendar`, `weekly_days`, `weekly_quota`, `monthly_day`
+- Tipos de programación de plantillas: `interval_calendar`, `interval_completion`, `monthly_day`, `none`
 - RLS cerrado + permisos mínimos a `anon`
 
 Pendiente (sesiones futuras):
 
-- Tipos de programación de hábitos y tareas (fijas vs deslizantes)
-- `task_templates` + materialización de ocurrencias con `pg_cron`
+- Materialización automática de ocurrencias fijas con `pg_cron` (tareas `interval_calendar` y `times_of_day`)
 - `deleted_at` (tombstones) en todas las tablas
 - Vistas de análisis (`v_habit_stats`) para Grafana y PWA
 - `v_inbox_tasks` (tareas sin fecha)

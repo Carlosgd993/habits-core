@@ -13,16 +13,17 @@ Mono-usuario: no hay `user_id` ni multi-tenancy. El modelo está inspirado en la
 El repo es pequeño; esto es todo lo que hay:
 
 ```
-supabase/migrations/     5 ficheros SQL — el repo en la práctica
-docs/contrato.md         Qué consumen los clientes.  ~70 líneas, léelo entero
-docs/estructura-bd.md    Esquema completo: decisiones, ER y DDL de las 10 tablas
+supabase/migrations/     7 ficheros SQL — el repo en la práctica
+docs/contrato.md         Qué consumen los clientes.  Léelo entero antes de tocar nada
+docs/estructura-bd.md    Esquema completo: decisiones, ER y DDL de las tablas
 docs/supabase.http       Peticiones PostgREST de ejemplo y verificación
 ```
 
 | Si vas a… | Mira |
 |---|---|
-| Cambiar qué ven los clientes | `docs/contrato.md` **primero**, luego `20260724120100_views_today.sql` |
-| Cambiar cómo se registra un hábito o se cierra una tarea | `20260724120200_rpc_write.sql` |
+| Cambiar qué ven los clientes | `docs/contrato.md` **primero**, luego `20260727120100_schedule_views_rpc.sql` |
+| Cambiar cómo se registra un hábito o se cierra una tarea | `20260727120100_schedule_views_rpc.sql` |
+| Añadir/cambiar columnas de hábitos o programación | `20260727120000_schedule_columns.sql` |
 | Consultar columnas/tipos de una tabla | `docs/estructura-bd.md` → `## Tablas` (una subsección por tabla, con DDL) |
 | Depurar un 401/403 desde un cliente | `20260724120300_rls_contract.sql` (el bloque de `grant`) |
 | Tocar zona horaria o el estado "hecho" | `20260724120000_time_and_status.sql` |
@@ -33,22 +34,56 @@ docs/supabase.http       Peticiones PostgREST de ejemplo y verificación
 
 La superficie pública es exactamente esta, y nada más. Todo lo demás está cerrado.
 
-**Lectura — dos vistas:**
+### Dos ejes ortogonales (hábitos)
+
+No confundir `type` con `schedule_type`:
+
+| Eje | Campo | Controla | Valores |
+|---|---|---|---|
+| **QUÉ** mides | `type` | Cómo avanza el valor | `Boolean` (salta a goal) · `Real` (suma step) |
+| **CUÁNDO** toca | `schedule_type` | Qué días aparece | `interval_calendar` · `weekly_days` · `weekly_quota` · `monthly_day` |
+
+Son independientes. Un hábito Boolean puede ser semanal; un Real puede ser diario.
+
+### Lectura — tres vistas
 
 - `v_today_habits` → `id, name, icon_res, color, type, goal, step, unit, sort_order, section_id, current_value, done, day`
-  Hábitos activos (`habits.status = 0`) con el progreso de hoy ya calculado. Un hábito **siempre es de hoy**: no arrastra deuda ni vence (si ayer quedó 2/8, hoy empieza en 0/8) — por eso no hay filtro de fecha ni de recurrencia. `current_value` **puede superar `goal`** (10/8 es válido y deliberado); `done` solo indica si se alcanzó el objetivo, no si se puede seguir sumando.
-- `v_today_tasks` → `id, title, priority, project_id, sort_order, due_date, due_day, overdue, day`
-  Tareas pendientes con vencimiento hoy o antes. A diferencia de los hábitos, **sí arrastran**: una vencida el lunes sigue apareciendo el jueves con `overdue = true`. Las tareas **sin fecha se excluyen** (con 12 teclas útiles en el deck, el inbox inundaría la pantalla); cuando hagan falta irán en una `v_inbox_tasks` aparte.
+  Solo hábitos `purpose='goal'` cuyo `schedule_type` indica que hoy toca. Un hábito no arrastra deuda (2/8 ayer → 0/8 hoy). `current_value` puede superar `goal` (10/8 válido). Para `weekly_quota`, `current_value` = nº de días con checkin en la semana ISO actual, no el valor del día de hoy. `done = current_value >= goal`.
 
-**Escritura — cinco funciones RPC** (todas `security definer` con `set search_path = public`):
+  | `schedule_type` | Toca hoy si… |
+  |---|---|
+  | `interval_calendar` | `(hoy − anchor_date) % interval_n = 0`; con n=1 es diario |
+  | `weekly_days` | `isodow(hoy)` está en `byday` (1=lun…7=dom) |
+  | `weekly_quota` | siempre (cualquier día cuenta) |
+  | `monthly_day` | `day(hoy) = bymonthday` |
+
+- `v_log_habits` → `id, name, icon_res, color, type, unit, sort_order, section_id, current_value, day`
+  Hábitos `purpose='log'`: solo registro, nunca pendientes. No tienen objetivo ni programación. Se llama a `habit_step` sobre ellos igual que sobre los goal.
+
+- `v_today_tasks` → `id, title, priority, project_id, sort_order, due_date, template_id, due_day, overdue, day`
+  Ocurrencias de `tasks` con `completed_time is null`, `skipped_time is null` y vencimiento hoy o antes. Las vencidas arrastran con `overdue = true`. Sin fecha, no salen (inbox aparte).
+
+### task_templates vs tasks
+
+`task_templates` = definición reutilizable (título, prioridad, subtareas, schedule_type de la plantilla). `tasks` = ocurrencias concretas con `due_date`, `completed_time`, `skipped_time` y `template_id` (null si tarea única). Las ocurrencias nunca se borran: siempre se marcan.
+
+Ciclo de vida de una ocurrencia:
+- `completed_time is null` y `skipped_time is null` → pendiente (aparece en vista)
+- `completed_time is not null` → hecha (desaparece)
+- `skipped_time is not null` → omitida (desaparece, pero queda registrada)
+
+### Escritura — ocho funciones RPC (todas `security definer` con `set search_path = public`)
 
 | Función | Qué hace |
 |---|---|
-| `habit_step(p_habit_id)` → `float` | La operación de "pulsar la tecla". Boolean → salta a `goal`; Real → suma `step` **sin tope**. Upsert atómico con `on conflict (habit_id, checkin_date)`: sin carreras entre deck y móvil. Devuelve el nuevo total. Falla con `no_data_found` si el hábito no existe o está archivado. |
+| `habit_step(p_habit_id)` → `float` | La operación de "pulsar la tecla". `weekly_quota` → fija 1 en el día (idempotente); `Boolean` → salta a `goal`; `Real` → suma `step` sin tope. Upsert atómico. Falla con `no_data_found` si el hábito no existe o está archivado. |
 | `habit_set(p_habit_id, p_value)` → `float` | Fija el total exacto de hoy (`greatest(p_value, 0)`). Para correcciones desde la PWA. |
 | `habit_undo(p_habit_id)` → `float` | Retrocede un paso. Boolean → 0; Real → `greatest(value - step, 0)`. Devuelve 0 si hoy no había checkin. |
-| `complete_task(p_task_id)` | Fija `completed_time` y mueve `status_id` al estado con `is_done`. **Idempotente** (`where completed_time is null`). Punto de enganche futuro para recurrencias deslizantes. |
+| `instantiate_task(p_template_id, p_due)` → `uuid` | Crea una ocurrencia en `tasks` desde una plantilla, copiando subtareas. Devuelve el id de la nueva ocurrencia. |
+| `complete_task(p_task_id)` | Cierra la ocurrencia. **Idempotente**. Si la plantilla es `interval_completion`, crea la siguiente ocurrencia a `interval_n` días desde ahora (deslizante). |
 | `uncomplete_task(p_task_id)` | Reabre: limpia `completed_time` y `status_id`. |
+| `skip_task(p_task_id)` | Marca la ocurrencia como omitida (`skipped_time = now()`). Sale de la vista pero queda en la historia. |
+| `unskip_task(p_task_id)` | Limpia `skipped_time`. |
 
 Más `app_today()`, la única fuente de verdad sobre la fecha.
 
@@ -63,11 +98,13 @@ Romper una de estas rompe clientes ya desplegados, normalmente en silencio:
 
 ## Cosas que no se deducen leyendo el SQL
 
-- **Las tablas base SÍ están en `supabase/migrations/`, desde `20260724115900_base_tables.sql`.** Se crearon originalmente fuera de banda (dashboard de Supabase o MCP), y esa migración las trae al repo con `create table if not exists` — en producción es un no-op (las tablas ya existen), en un proyecto nuevo (p. ej. el de test) es la migración que las crea antes de que `20260724120000_time_and_status` empiece a hacer `alter table` sobre ellas. Por eso su timestamp es **anterior** a esa migración aunque se escribiera después. Su DDL replica `docs/estructura-bd.md`; si alguna vez diverge de la base real, gana la base de datos (verifícalo con MCP `list_tables` / `execute_sql`) y se corrige en ambos sitios.
-- **Las vistas se crean deliberadamente SIN `security_invoker = true`.** Al ejecutarse con los permisos de su propietario, atraviesan el RLS de las tablas subyacentes y devuelven filas que `anon` no podría leer directamente. Si alguien añade `security_invoker`, las vistas se quedan vacías y todos los clientes dejan de mostrar datos sin ningún error visible.
-- **`app_timezone()` está hardcodeada a `Europe/Madrid`.** Es lo que evita que el servidor UTC cambie de día a las 02:00 hora local en verano (un checkin a la 01:30 caería en "ayer"). Cambiar de huso = cambiar esa función, y se entera todo el ecosistema a la vez.
-- **La cabecera de `docs/supabase.http` está desactualizada**: afirma que las tablas tienen una política permisiva de acceso total para `anon`. Dejó de ser cierto con la migración `rls_contract`. Los ejemplos CRUD directos sobre tablas de ese fichero solo funcionan con la service key.
+- **Las tablas base no están en `supabase/migrations/`.** La migración más antigua hace `alter table` sobre tablas que ya existían (creadas fuera de banda). Su DDL solo está **documentado** en `docs/estructura-bd.md`. Si necesitas la verdad sobre una tabla, consúltala en la base (MCP `list_tables` / `execute_sql`), no asumas que el doc está sincronizado.
+- **Las vistas se crean deliberadamente SIN `security_invoker = true`.** Al ejecutarse con los permisos de su propietario, atraviesan el RLS de las tablas subyacentes y devuelven filas que `anon` no podría leer directamente. Si alguien añade `security_invoker`, las vistas se quedan vacías sin ningún error visible.
+- **`app_timezone()` está hardcodeada a `Europe/Madrid`.** Es lo que evita que el servidor UTC cambie de día a las 02:00 hora local en verano. Cambiar de huso = cambiar esa función, y se entera todo el ecosistema a la vez.
+- **La cabecera de `docs/supabase.http` está desactualizada**: afirma que las tablas tienen política permisiva para `anon`. Dejó de ser cierto con `rls_contract`. Los ejemplos CRUD directos sobre tablas solo funcionan con la service key.
 - **`.env` incluye `TICKTICK_ACCESS_TOKEN` y `TICKTICK_BASE_URL`, pero nada en este repo las consume.** Son residuo de la etapa TickTick.
+- **`habit_step` en `weekly_quota` fija `value = 1` en el checkin del día** (idempotente en el día). El contador semanal que muestra `v_today_habits` se calcula contando los días de la semana con `value > 0`, no sumando los valores.
+- **Las tareas de materialización fija (`interval_calendar`, `times_of_day`) NO se auto-crean todavía**: solo la deslizante (`interval_completion`) crea la siguiente ocurrencia vía `complete_task`. El materializador `pg_cron` está pendiente.
 
 ## Comandos
 
@@ -95,6 +132,7 @@ Es el único "test" que existe, y es manual. Usa la **clave anon**, nunca la ser
 | # | Petición | Resultado esperado |
 |---|---|---|
 | 1 | `GET /rest/v1/v_today_habits?select=*` | 200 con filas |
+| 1b | `GET /rest/v1/v_log_habits?select=*` | 200 con filas |
 | 2 | `GET /rest/v1/habits?select=*` | **falla** (401/403 o vacío) |
 | 3 | `POST /rest/v1/habit_checkins` | **falla** |
 | 4 | `POST /rest/v1/rpc/habit_step` | funciona |
@@ -111,9 +149,19 @@ Si 2 o 3 tienen éxito, hay un `revoke` roto en `20260724120300_rls_contract.sql
 - En cualquier función `security definer`, `set search_path = public` es **obligatorio** o el `search_path` del llamante puede secuestrar la resolución de nombres.
 - Documentación, comentarios SQL y mensajes de commit en español.
 
-## Roadmap (sección "Estado" del README)
+## Roadmap
 
-Hábitos y tareas con programación fija vs. deslizante · `task_templates` + materialización de ocurrencias con `pg_cron` · tombstones (`deleted_at`) · vistas de análisis (`v_habit_stats`) para Grafana y la PWA · `v_inbox_tasks`.
+Implementado:
+- Tipos de programación de hábitos: `interval_calendar`, `weekly_days`, `weekly_quota`, `monthly_day`
+- `task_templates` + ocurrencias `tasks` con `skipped_time`
+- `instantiate_task`, `skip_task`, `unskip_task`
+- `complete_task` con enganche deslizante (`interval_completion`)
+
+Pendiente:
+- Materialización automática de ocurrencias fijas con `pg_cron` (tareas `interval_calendar` y `times_of_day`)
+- Tombstones (`deleted_at`) en todas las tablas
+- Vistas de análisis (`v_habit_stats`) para Grafana y PWA
+- `v_inbox_tasks` (tareas sin fecha)
 
 ## Mantén este fichero al día
 

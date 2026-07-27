@@ -13,52 +13,137 @@ sabrás cuál miente.
 
 El contrato mueve esas decisiones a un solo sitio.
 
+## Dos ejes ortogonales (hábitos)
+
+Antes de leer las vistas conviene no confundir:
+
+| Eje | Campo | Qué controla | Valores |
+| --- | --- | --- | --- |
+| **QUÉ** mides | `type` | Cómo avanza el valor | `Boolean` (salta a goal) · `Real` (suma step) |
+| **CUÁNDO** toca | `schedule_type` | Qué días aparece el hábito | `interval_calendar` · `weekly_days` · `weekly_quota` · `monthly_day` |
+
+Son independientes: un hábito Boolean puede ser semanal; un Real puede ser diario.
+
+### schedule_type de hábitos
+
+| Valor | Toca hoy si… | `current_value` devuelve |
+| --- | --- | --- |
+| `interval_calendar` | `(hoy − anchor_date) % interval_n = 0`. Con `n=1` es diario | valor del checkin de hoy |
+| `weekly_days` | `isodow(hoy)` está en `byday` (1=lun … 7=dom) | valor del checkin de hoy |
+| `weekly_quota` | **siempre** (cualquier día cuenta) | nº de días con checkin en la semana ISO actual |
+| `monthly_day` | `day(hoy) = bymonthday` | valor del checkin de hoy |
+
 ## Lectura
 
 | Vista | Devuelve |
 | --- | --- |
-| `v_today_habits` | Hábitos activos con su progreso de hoy |
-| `v_today_tasks` | Tareas pendientes que vencen hoy o antes |
+| `v_today_habits` | Hábitos con objetivo que **tocan hoy** según su programación |
+| `v_log_habits` | Hábitos de solo registro (nunca pendientes) |
+| `v_today_tasks` | Ocurrencias de tarea pendientes con vencimiento hoy o antes |
 
 ### `v_today_habits`
 
 `id`, `name`, `icon_res`, `color`, `type`, `goal`, `step`, `unit`,
 `sort_order`, `section_id`, `current_value`, `done`, `day`
 
-Un hábito **siempre es de hoy**. No vence, no arrastra deuda: si ayer se quedó
-en 2/8, hoy empieza en 0/8. `current_value` **puede superar** a `goal` — 10/8 es
-un estado válido. `done` solo dice si se alcanzó el objetivo, no si está
-cerrado.
+Solo salen hábitos con `purpose = 'goal'` **y** cuyo `schedule_type` indica que
+hoy es un día que toca (ver tabla arriba). Un hábito sin programación nunca
+aparece aquí.
+
+Un hábito **no arrastra deuda**: si ayer quedó en 2/8, hoy empieza en 0/8.
+`current_value` **puede superar** a `goal` — 10/8 es válido y deliberado.
+`done` solo dice si se alcanzó el objetivo, no bloquea más incrementos.
+
+Para `weekly_quota`, `current_value` es el número de días distintos de la semana
+ISO actual en que hubo checkin con `value > 0` — no el valor del día de hoy.
+Pulsar el hábito un segundo día de la misma semana sube el contador de 1 a 2.
+
+### `v_log_habits`
+
+`id`, `name`, `icon_res`, `color`, `type`, `unit`, `sort_order`, `section_id`,
+`current_value`, `day`
+
+Hábitos con `purpose = 'log'`: nunca tienen objetivo ni programación, nunca son
+"pendientes". Sirven para registrar eventos ("bebí cocacola hoy") y consultarlos
+luego en analítica. Se puede llamar a `habit_step` sobre ellos igual que en
+cualquier hábito.
 
 ### `v_today_tasks`
 
-`id`, `title`, `priority`, `project_id`, `sort_order`, `due_date`, `due_day`,
-`overdue`, `day`
+`id`, `title`, `priority`, `project_id`, `sort_order`, `due_date`,
+`template_id`, `due_day`, `overdue`, `day`
+
+Muestra **ocurrencias** (filas de `tasks`) que cumplen:
+
+- `completed_time is null` — no completada
+- `skipped_time is null` — no omitida
+- `due_date` con vencimiento hoy o antes (en la zona horaria local)
 
 Una tarea **sí arrastra**: si venció el lunes y no se hizo, sigue apareciendo
-con `overdue = true`. Al completarse desaparece de la vista (aunque una
-recurrencia pueda hacerla reaparecer en otra fecha).
+con `overdue = true`. Las tareas **sin fecha no salen aquí**.
 
-Las tareas **sin fecha no salen aquí**. Con 12 teclas útiles en la Stream Deck,
-el inbox entero inundaría la pantalla.
+#### Ciclo de vida de una ocurrencia
+
+| Estado | Indicador | Aparece en vista |
+| --- | --- | --- |
+| Pendiente | `completed_time is null` y `skipped_time is null` | Sí |
+| Hecha | `completed_time is not null` | No |
+| Omitida | `skipped_time is not null` | No |
+
+Las ocurrencias **nunca se borran**: siempre se marcan. Esto preserva la
+historia y permite deshacerlos.
+
+#### task_templates vs tasks
+
+`task_templates` contiene la definición reutilizable (título, prioridad,
+proyecto, subtareas, schedule_type de la plantilla). `tasks` contiene las
+ocurrencias concretas, cada una con su `due_date`, `completed_time`,
+`skipped_time` y un `template_id` que apunta a la plantilla (o `null` si es
+una tarea única).
 
 ## Escritura
 
 | Función | Efecto |
 | --- | --- |
-| `habit_step(p_habit_id)` | Avanza un paso. Devuelve el nuevo total |
-| `habit_set(p_habit_id, p_value)` | Fija el total exacto de hoy |
-| `habit_undo(p_habit_id)` | Retrocede un paso |
-| `complete_task(p_task_id)` | Cierra la tarea. Idempotente |
-| `uncomplete_task(p_task_id)` | La reabre |
+| `habit_step(p_habit_id)` → `float` | Avanza un paso. Devuelve el nuevo total |
+| `habit_set(p_habit_id, p_value)` → `float` | Fija el total exacto de hoy |
+| `habit_undo(p_habit_id)` → `float` | Retrocede un paso |
+| `instantiate_task(p_template_id, p_due)` → `uuid` | Crea una ocurrencia a partir de una plantilla |
+| `complete_task(p_task_id)` | Cierra una ocurrencia. Idempotente |
+| `uncomplete_task(p_task_id)` | Reabre una ocurrencia |
+| `skip_task(p_task_id)` | Marca la ocurrencia como omitida (sale de la vista, queda registrada) |
+| `unskip_task(p_task_id)` | Deshace el omitido |
 
-`habit_step` sustituye al patrón leer → calcular → escribir que hacía el daemon.
-Es atómico: pulsar en el deck y en el móvil a la vez no pierde un incremento.
+### habit_step — comportamiento por tipo y schedule
 
-Comportamiento por tipo:
+`habit_step` es atómico (upsert con `on conflict`): pulsar en el deck y en el
+móvil a la vez no pierde un incremento.
 
-- **Boolean** — salta directo a `goal`. Es binario.
-- **Real** — suma `step`, **sin tope**.
+| Combinación | Qué hace |
+| --- | --- |
+| `weekly_quota` (cualquier type) | Fija `value = 1` el día actual (idempotente en el día). El contador semanal sube porque hay un día más con checkin |
+| `type = Boolean` (no weekly_quota) | Salta directo a `goal` |
+| `type = Real` (no weekly_quota) | Suma `step`, sin tope |
+
+### instantiate_task
+
+Crea una fila en `tasks` copiando `project_id`, `title` y `priority` de la
+plantilla, e inserta en `checklist_items` las subtareas definidas en el JSON de
+`task_templates.subtasks`. Devuelve el `id` de la ocurrencia nueva.
+
+### complete_task — enganche deslizante
+
+Si la ocurrencia viene de una plantilla con
+`schedule_type = 'interval_completion'`, `complete_task` llama internamente a
+`instantiate_task` para crear la siguiente ocurrencia con
+`due_date = now() + interval_n days`. Así la tarea deslizante reaparece a los N
+días desde el cierre, no desde el calendario.
+
+### skip_task / unskip_task
+
+`skip_task` pone `skipped_time = now()` si la ocurrencia no está ya cerrada o
+omitida. La ocurrencia desaparece de `v_today_tasks` pero queda en `tasks` con
+su historia. `unskip_task` limpia `skipped_time`.
 
 ## Reglas de evolución
 
@@ -68,6 +153,5 @@ Comportamiento por tipo:
 2. **Ningún cliente envía nunca una fecha.** La decide `app_today()`.
 3. **Ningún cliente conoce un UUID de catálogo.** Ni de `statuses`, ni de
    `projects`. Si hace falta uno, es que falta una función.
-4. **El cuerpo de una vista puede reescribirse entero.** Cuando lleguen las
-   plantillas y las ocurrencias, `v_today_tasks` cambiará por dentro y ningún
-   cliente se enterará. Ese es todo el motivo de que exista.
+4. **El cuerpo de una vista puede reescribirse entero.** Es para eso que existe
+   la indirección.
