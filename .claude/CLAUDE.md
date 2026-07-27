@@ -13,7 +13,7 @@ Mono-usuario: no hay `user_id` ni multi-tenancy. El modelo está inspirado en la
 El repo es pequeño; esto es todo lo que hay:
 
 ```
-supabase/migrations/     4 ficheros SQL — el repo en la práctica
+supabase/migrations/     5 ficheros SQL — el repo en la práctica
 docs/contrato.md         Qué consumen los clientes.  ~70 líneas, léelo entero
 docs/estructura-bd.md    Esquema completo: decisiones, ER y DDL de las 10 tablas
 docs/supabase.http       Peticiones PostgREST de ejemplo y verificación
@@ -63,7 +63,7 @@ Romper una de estas rompe clientes ya desplegados, normalmente en silencio:
 
 ## Cosas que no se deducen leyendo el SQL
 
-- **Las tablas base no están en `supabase/migrations/`.** Ninguna migración tiene un `create table`: la primera hace `alter table statuses add column…` sobre tablas que ya existían. Se crearon fuera de banda (dashboard de Supabase o MCP). Su DDL solo está **documentado** en `docs/estructura-bd.md` — que es documentación, no la fuente aplicada. Si necesitas la verdad sobre una tabla, consúltala en la base (MCP `list_tables` / `execute_sql`), no asumas que el doc está sincronizado.
+- **Las tablas base SÍ están en `supabase/migrations/`, desde `20260724115900_base_tables.sql`.** Se crearon originalmente fuera de banda (dashboard de Supabase o MCP), y esa migración las trae al repo con `create table if not exists` — en producción es un no-op (las tablas ya existen), en un proyecto nuevo (p. ej. el de test) es la migración que las crea antes de que `20260724120000_time_and_status` empiece a hacer `alter table` sobre ellas. Por eso su timestamp es **anterior** a esa migración aunque se escribiera después. Su DDL replica `docs/estructura-bd.md`; si alguna vez diverge de la base real, gana la base de datos (verifícalo con MCP `list_tables` / `execute_sql`) y se corrige en ambos sitios.
 - **Las vistas se crean deliberadamente SIN `security_invoker = true`.** Al ejecutarse con los permisos de su propietario, atraviesan el RLS de las tablas subyacentes y devuelven filas que `anon` no podría leer directamente. Si alguien añade `security_invoker`, las vistas se quedan vacías y todos los clientes dejan de mostrar datos sin ningún error visible.
 - **`app_timezone()` está hardcodeada a `Europe/Madrid`.** Es lo que evita que el servidor UTC cambie de día a las 02:00 hora local en verano (un checkin a la 01:30 caería en "ayer"). Cambiar de huso = cambiar esa función, y se entera todo el ecosistema a la vez.
 - **La cabecera de `docs/supabase.http` está desactualizada**: afirma que las tablas tienen una política permisiva de acceso total para `anon`. Dejó de ser cierto con la migración `rls_contract`. Los ejemplos CRUD directos sobre tablas de ese fichero solo funcionan con la service key.
@@ -79,6 +79,14 @@ supabase init                    # genera supabase/config.toml (gitignored)
 supabase link --project-ref <ref>
 supabase db push                 # aplica supabase/migrations/ al proyecto cloud
 ```
+
+### Integración GitHub ↔ Supabase
+
+Conectada y verificada. Configuración actual (dashboard de Supabase → *Integrations*):
+
+- Repo enlazado: `Carlosgd993/habits-core`, working directory `.` (busca `supabase/` en la raíz del repo).
+- **"Deploy to production" activado**, rama de producción `main`: cualquier merge/push a `main` aplica `supabase/migrations/` directamente al proyecto cloud. Ya no hace falta `supabase db push` manual para llegar a producción.
+- **Branching (preview databases por PR) desactivado** — es una función del plan Pro y no está contratado. Consecuencia importante: **no hay red de seguridad de un preview DB por PR**; un push a `main` va directo a producción sin pasar antes por una base de datos de prueba aislada. Verificar migraciones antes de mergear (con `supabase db push` a un proyecto local/staging, o revisión manual) sigue siendo responsabilidad de quien hace el cambio, no de la integración.
 
 ### Verificación tras aplicar migraciones
 
