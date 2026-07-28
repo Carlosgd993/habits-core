@@ -157,4 +157,10 @@ on conflict (id) do nothing;
 --   select complete_task('e0000000-0000-0000-0000-00000000000b');  -- regar plantas
 --   select title, due_date from tasks where template_id = 'd0000000-0000-0000-0000-00000000000b';
 --     -> debe aparecer una ocurrencia NUEVA a 3 dias vista (deslizante).
+--   select skip_task('<id de la ocurrencia nueva>');
+--     -> omitir encadena IGUAL que completar: aparece otra a 3 dias vista, y la
+--        omitida queda con skipped_time (no completed_time) y sin status_id.
+--   update task_templates set active = false where id = 'd0000000-0000-0000-0000-00000000000b';
+--   select complete_task('<id de la ultima ocurrencia>');
+--     -> debe cerrarse SIN error y SIN crear otra: desactivar para la cadena.
 -- =============================================================================
