@@ -7,6 +7,14 @@ proyecto: no se migran datos ni se sincroniza con su API — su modelo se usa so
 
 Fuente: `.claude/ticktick-api-doc.md` (TickTick Open API) y los ficheros `ticktick_*.http`.
 
+> **⚠️ Este documento va por detrás del SQL.** La fuente de verdad del esquema es
+> `supabase/migrations/20260724115900_init.sql`. Divergencias conocidas: aquí
+> todavía aparece `repeat_rule` en `habits` y `tasks` (columna **eliminada**: la
+> recurrencia vive en `habits.schedule_type` y en `task_templates`), y **no** están
+> documentadas la tabla `task_templates`, las columnas de programación de `habits`
+> (`purpose`, `schedule_type`, `interval_n`, `byday`, `bymonthday`, `anchor_date`),
+> `tasks.template_id`, `tasks.skipped_time` ni `statuses.is_done`.
+
 ## Decisiones de diseño
 
 - **Un solo usuario (personal).** Sin columna `user_id` ni multi-tenancy. Las políticas
@@ -420,7 +428,7 @@ create trigger trg_habit_checkins_updated  before update on habit_checkins  for 
   [Decisiones de diseño](#decisiones-de-diseño).
 - **Multi-usuario**: base personal, sin `user_id` ni tenancy.
 - ~~RLS fuera de alcance~~ — ya no. RLS está versionado en
-  `supabase/migrations/` (`20260724120300_rls_contract.sql`,
-  `20260727120200_task_templates_rls.sql`) y toda tabla nueva la activa sola
-  vía event trigger. Ver `.claude/CLAUDE.md` → "El contrato" para el detalle
-  vivo; esta sección documenta el modelo de datos, no el control de acceso.
+  `supabase/migrations/20260724120600_rls_contract.sql`, y toda tabla nueva la
+  activa sola vía event trigger. Ver `.claude/CLAUDE.md` → "El contrato" para el
+  detalle vivo; esta sección documenta el modelo de datos, no el control de
+  acceso.

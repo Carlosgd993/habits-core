@@ -125,10 +125,16 @@ cliente solo para mostrar "3 subtareas".
 | `habit_set(p_habit_id, p_value)` → `float` | Fija el total exacto de hoy |
 | `habit_undo(p_habit_id)` → `float` | Retrocede un paso |
 | `instantiate_task(p_template_id, p_due)` → `uuid` | Crea una ocurrencia a partir de una plantilla |
-| `complete_task(p_task_id)` | Cierra una ocurrencia. Idempotente |
+| `complete_task(p_task_id)` | Cierra una ocurrencia. Idempotente. Encadena la siguiente si es deslizante |
 | `uncomplete_task(p_task_id)` | Reabre una ocurrencia |
-| `skip_task(p_task_id)` | Marca la ocurrencia como omitida (sale de la vista, queda registrada) |
+| `skip_task(p_task_id)` | Marca la ocurrencia como omitida (sale de la vista, queda registrada). Idempotente. Encadena la siguiente igual que `complete_task` |
 | `unskip_task(p_task_id)` | Deshace el omitido |
+
+Más `app_today()`. **Esta tabla es exhaustiva**: cualquier otra función que
+exista en la base es interna y no es llamable con la clave pública, aunque
+aparezca en el SQL. `chain_next_occurrence` es el ejemplo — vive en el mismo
+fichero que `complete_task` pero no tiene `grant`, así que `/rest/v1/rpc/` la
+rechaza.
 
 ### habit_step — comportamiento por tipo y schedule
 
@@ -147,19 +153,38 @@ Crea una fila en `tasks` copiando `project_id`, `title` y `priority` de la
 plantilla, e inserta en `checklist_items` las subtareas definidas en el JSON de
 `task_templates.subtasks`. Devuelve el `id` de la ocurrencia nueva.
 
-### complete_task — enganche deslizante
+### El enganche deslizante — común a `complete_task` y `skip_task`
 
 Si la ocurrencia viene de una plantilla con
-`schedule_type = 'interval_completion'`, `complete_task` llama internamente a
-`instantiate_task` para crear la siguiente ocurrencia con
-`due_date = now() + interval_n days`. Así la tarea deslizante reaparece a los N
-días desde el cierre, no desde el calendario.
+`schedule_type = 'interval_completion'`, al dejar de estar pendiente se crea
+automáticamente la siguiente con `due_date = now() + interval_n days`. Así la
+tarea deslizante reaparece a los N días desde que la resolviste, no desde el
+calendario.
+
+**Completar y omitir encadenan igual.** Omitir no es lo contrario de completar,
+es su hermano: en ambos casos la ocurrencia deja de estar pendiente y la
+recurrencia sigue su curso. Lo único que cambia es el rastro que queda en la
+historia — `completed_time` frente a `skipped_time` —, y que omitir no toca
+`status_id` (omitida no es "hecha"). Es lo que permite mirar atrás y distinguir
+los días que te tomaste la pastilla de los que no.
+
+Dos casos en los que **no** se encadena, por diseño:
+
+- La ocurrencia no tiene plantilla (`template_id is null`): es una tarea única.
+- La plantilla está `active = false`. Desactivarla es cómo se para una
+  recurrencia, así que la cadena termina ahí — y la ocurrencia que quedara
+  abierta se cierra con normalidad.
 
 ### skip_task / unskip_task
 
-`skip_task` pone `skipped_time = now()` si la ocurrencia no está ya cerrada o
-omitida. La ocurrencia desaparece de `v_today_tasks` pero queda en `tasks` con
-su historia. `unskip_task` limpia `skipped_time`.
+`skip_task` pone `skipped_time = now()` si la ocurrencia no está ya cerrada u
+omitida, y encadena la siguiente (ver arriba). Es idempotente: omitir dos veces
+no reescribe la hora ni duplica la siguiente ocurrencia. La ocurrencia
+desaparece de `v_today_tasks` pero queda en `tasks` con su historia.
+
+`unskip_task` limpia `skipped_time`, pero **no borra la ocurrencia que se
+encadenó**: si la reabres, tendrás dos abiertas. Mismo comportamiento que
+`uncomplete_task`.
 
 ## Reglas de evolución
 
