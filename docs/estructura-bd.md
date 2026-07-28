@@ -10,8 +10,8 @@ Fuente: `.claude/ticktick-api-doc.md` (TickTick Open API) y los ficheros `tickti
 ## Decisiones de diseño
 
 - **Un solo usuario (personal).** Sin columna `user_id` ni multi-tenancy. Las políticas
-  RLS pueden abrirse por completo o cerrarse a una sola clave; se deja fuera de este
-  diseño (es configuración de Supabase, no del modelo de datos).
+  de acceso (RLS + grants) están versionadas en `supabase/migrations/`, no en este
+  documento — ver `.claude/CLAUDE.md` → "El contrato".
 - **snake_case idiomático Postgres.** Cada campo camelCase de TickTick se renombra
   (`repeatRule` → `repeat_rule`, `dueDate` → `due_date`, …). El mapeo campo→columna se
   documenta en cada tabla.
@@ -418,5 +418,9 @@ create trigger trg_habit_checkins_updated  before update on habit_checkins  for 
 - **Focus** (Pomodoro/Timing): excluido por decisión de proyecto.
 - **`etag`, `year`, `permission`**: campos de transporte/compartición de la API; ver
   [Decisiones de diseño](#decisiones-de-diseño).
-- **Multi-usuario / RLS**: base personal; las políticas de acceso son configuración de
-  Supabase aparte de este modelo.
+- **Multi-usuario**: base personal, sin `user_id` ni tenancy.
+- ~~RLS fuera de alcance~~ — ya no. RLS está versionado en
+  `supabase/migrations/` (`20260724120300_rls_contract.sql`,
+  `20260727120200_task_templates_rls.sql`) y toda tabla nueva la activa sola
+  vía event trigger. Ver `.claude/CLAUDE.md` → "El contrato" para el detalle
+  vivo; esta sección documenta el modelo de datos, no el control de acceso.

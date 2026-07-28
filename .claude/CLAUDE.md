@@ -13,7 +13,7 @@ Mono-usuario: no hay `user_id` ni multi-tenancy. El modelo está inspirado en la
 El repo es pequeño; esto es todo lo que hay:
 
 ```
-supabase/migrations/     7 ficheros SQL — el repo en la práctica
+supabase/migrations/     8 ficheros SQL — el repo en la práctica
 docs/contrato.md         Qué consumen los clientes.  Léelo entero antes de tocar nada
 docs/estructura-bd.md    Esquema completo: decisiones, ER y DDL de las tablas
 docs/supabase.http       Peticiones PostgREST de ejemplo y verificación
@@ -24,8 +24,10 @@ docs/supabase.http       Peticiones PostgREST de ejemplo y verificación
 | Cambiar qué ven los clientes | `docs/contrato.md` **primero**, luego `20260727120100_schedule_views_rpc.sql` |
 | Cambiar cómo se registra un hábito o se cierra una tarea | `20260727120100_schedule_views_rpc.sql` |
 | Añadir/cambiar columnas de hábitos o programación | `20260727120000_schedule_columns.sql` |
+| Cambiar qué plantillas ve la PWA o cómo se instancian tareas | `docs/contrato.md`, `20260727120200_task_templates_rls.sql` (vista `v_templates`) |
 | Consultar columnas/tipos de una tabla | `docs/estructura-bd.md` → `## Tablas` (una subsección por tabla, con DDL) |
-| Depurar un 401/403 desde un cliente | `20260724120300_rls_contract.sql` (el bloque de `grant`) |
+| Depurar un 401/403 desde un cliente | `20260724120300_rls_contract.sql` y `20260727120200_task_templates_rls.sql` (los bloques de `grant`/`revoke`) |
+| Añadir una tabla nueva y saber si queda cerrada por defecto | `rls_auto_enable()` en `20260727120200_task_templates_rls.sql` — activa RLS sola, pero los grants siguen siendo manuales |
 | Tocar zona horaria o el estado "hecho" | `20260724120000_time_and_status.sql` |
 
 **Antes de tocar nada, lee `docs/contrato.md`.** Es lo que define qué se puede romper.
@@ -45,7 +47,7 @@ No confundir `type` con `schedule_type`:
 
 Son independientes. Un hábito Boolean puede ser semanal; un Real puede ser diario.
 
-### Lectura — tres vistas
+### Lectura — cuatro vistas
 
 - `v_today_habits` → `id, name, icon_res, color, type, goal, step, unit, sort_order, section_id, current_value, done, day`
   Solo hábitos `purpose='goal'` cuyo `schedule_type` indica que hoy toca. Un hábito no arrastra deuda (2/8 ayer → 0/8 hoy). `current_value` puede superar `goal` (10/8 válido). Para `weekly_quota`, `current_value` = nº de días con checkin en la semana ISO actual, no el valor del día de hoy. `done = current_value >= goal`.
@@ -62,6 +64,9 @@ Son independientes. Un hábito Boolean puede ser semanal; un Real puede ser diar
 
 - `v_today_tasks` → `id, title, priority, project_id, sort_order, due_date, template_id, due_day, overdue, day`
   Ocurrencias de `tasks` con `completed_time is null`, `skipped_time is null` y vencimiento hoy o antes. Las vencidas arrastran con `overdue = true`. Sin fecha, no salen (inbox aparte).
+
+- `v_templates` → `id, title, project_id, priority, schedule_type, interval_n, bymonthday, subtask_count, created_at`
+  Plantillas activas (`task_templates.active = true`) para que la PWA las liste y llame a `instantiate_task(id)`. No expone `anchor_date` ni el `subtasks` jsonb crudo — `subtask_count` basta para pintar "3 subtareas"; `instantiate_task` se encarga del jsonb por dentro. Es la única vía de lectura sobre `task_templates`: la tabla en sí está cerrada (ver más abajo).
 
 ### task_templates vs tasks
 
@@ -105,6 +110,8 @@ Romper una de estas rompe clientes ya desplegados, normalmente en silencio:
 - **`.env` incluye `TICKTICK_ACCESS_TOKEN` y `TICKTICK_BASE_URL`, pero nada en este repo las consume.** Son residuo de la etapa TickTick.
 - **`habit_step` en `weekly_quota` fija `value = 1` en el checkin del día** (idempotente en el día). El contador semanal que muestra `v_today_habits` se calcula contando los días de la semana con `value > 0`, no sumando los valores.
 - **Las tareas de materialización fija (`interval_calendar`, `times_of_day`) NO se auto-crean todavía**: solo la deslizante (`interval_completion`) crea la siguiente ocurrencia vía `complete_task`. El materializador `pg_cron` está pendiente.
+- **`task_templates` estuvo abierta a `anon` entre `20260727120000` y `20260727120200`.** Se creó después de `rls_contract` y quedó fuera de aquella lista de tablas con RLS — un cliente con la clave anon podía leer y escribir plantillas directamente. Cerrado en `20260727120200_task_templates_rls.sql`.
+- **Toda tabla nueva del esquema `public` activa RLS sola**, vía el event trigger `trg_rls_auto_enable` (función `rls_auto_enable()`, en `20260727120200_task_templates_rls.sql`). Es la red de seguridad para que no se repita el agujero de `task_templates`: una tabla creada sin más queda con RLS activado y sin políticas → cerrada por defecto. Los `grant` siguen siendo manuales — RLS activo no basta si luego se hace `grant all` a `anon`.
 
 ## Comandos
 
@@ -156,6 +163,8 @@ Implementado:
 - `task_templates` + ocurrencias `tasks` con `skipped_time`
 - `instantiate_task`, `skip_task`, `unskip_task`
 - `complete_task` con enganche deslizante (`interval_completion`)
+- `task_templates` cerrada con RLS + vista `v_templates` para que la PWA liste plantillas
+- RLS automático en tablas nuevas de `public` (event trigger `rls_auto_enable`)
 
 Pendiente:
 - Materialización automática de ocurrencias fijas con `pg_cron` (tareas `interval_calendar` y `times_of_day`)

@@ -40,6 +40,7 @@ Son independientes: un hábito Boolean puede ser semanal; un Real puede ser diar
 | `v_today_habits` | Hábitos con objetivo que **tocan hoy** según su programación |
 | `v_log_habits` | Hábitos de solo registro (nunca pendientes) |
 | `v_today_tasks` | Ocurrencias de tarea pendientes con vencimiento hoy o antes |
+| `v_templates` | Plantillas activas, para crear tareas a partir de ellas |
 
 ### `v_today_habits`
 
@@ -100,6 +101,21 @@ proyecto, subtareas, schedule_type de la plantilla). `tasks` contiene las
 ocurrencias concretas, cada una con su `due_date`, `completed_time`,
 `skipped_time` y un `template_id` que apunta a la plantilla (o `null` si es
 una tarea única).
+
+La tabla `task_templates` en sí está cerrada (RLS, sin `grant` a `anon`): los
+clientes no la tocan directamente. Se lee vía `v_templates` y se instancia vía
+`instantiate_task`.
+
+### `v_templates`
+
+`id`, `title`, `project_id`, `priority`, `schedule_type`, `interval_n`,
+`bymonthday`, `subtask_count`, `created_at`
+
+Plantillas con `active = true`, ordenadas por `title`. Es justo lo necesario
+para que la PWA pinte una fila y llame a `instantiate_task(id)`: no expone
+`anchor_date` ni el jsonb crudo de `subtasks` — de eso se encarga
+`instantiate_task` por dentro. `subtask_count` evita mandar el jsonb entero al
+cliente solo para mostrar "3 subtareas".
 
 ## Escritura
 
