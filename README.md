@@ -34,12 +34,13 @@ Primero el linter, que es gratis y detecta lo que las peticiones no ven:
 supabase db advisors --level warn     # CLI v2.81.3+ (o MCP get_advisors)
 ```
 
-Dos avisos son **esperados y deliberados**; cualquier otro sí hay que mirarlo:
+Tres avisos son **esperados y deliberados**; cualquier otro sí hay que mirarlo:
 
 | Aviso | Por qué se ignora |
 | --- | --- |
 | `security_definer_view` en las 4 vistas | Es el mecanismo, no un descuido: la vista atraviesa el RLS para que `anon` lea sin tocar la tabla. Ponerle `security_invoker = true` las deja devolviendo cero filas, sin error |
 | `function_search_path_mutable` en `app_today` / `app_timezone` | Son `security invoker`, así que no escalan privilegios, y la cláusula `SET` les quitaría el inlining dentro de las vistas |
+| `anon_security_definer_function_executable` en las 8 funciones del contrato | Es el contrato haciendo su trabajo: `anon` tiene que poder llamarlas. Si este aviso aparece en una función que **no** está en la tabla de escritura de `docs/contrato.md`, eso sí es una fuga real |
 
 Luego las peticiones. Hazlas con la clave **publishable**, nunca con la de
 servicio: la de servicio salta RLS y daría falsos positivos en la 2 y la 3. La

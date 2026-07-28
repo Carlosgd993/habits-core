@@ -96,6 +96,12 @@ grant select on v_today_tasks  to anon;
 grant select on v_templates    to anon;
 
 -- Escritura: solo funciones.
+--
+-- app_timezone() necesita su propio grant aunque ningun cliente la llame
+-- directamente: app_today() la invoca por dentro, y al ser ambas `security
+-- invoker` el EXECUTE se comprueba contra anon. Sin este grant, las vistas que
+-- usan la fecha fallan con "permission denied for function app_timezone".
+grant execute on function app_timezone()                            to anon;
 grant execute on function app_today()                               to anon;
 grant execute on function habit_step(uuid)                          to anon;
 grant execute on function habit_set(uuid, double precision)         to anon;
