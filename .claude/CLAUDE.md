@@ -141,13 +141,38 @@ supabase link --project-ref <ref>
 supabase db push                 # aplica supabase/migrations/ al proyecto cloud
 ```
 
+### Dos proyectos Supabase, uno por rama
+
+| Proyecto | ref | Rama que lo despliega |
+|---|---|---|
+| `habits-core` (producción) | `ufyzpixnhrsltoxdqihn` | `main` |
+| `habits-core-test` | `dkomeqbvhobkaulogibw` | `develop` |
+
+Cada uno tiene su propia integración GitHub↔Supabase, independiente. La rama
+`test` no despliega a ningún proyecto por sí sola: es la rama de trabajo que
+se mergea a `develop` (para probar en `habits-core-test`) y, cuando está
+verificado, `develop` se mergea a `main` (para llegar a producción). El
+disparo es el **merge**, no el push directo a la rama — un `git push` sin
+merge no llega al proyecto.
+
+El daemon `../streamdeck-habits` puede apuntar a cualquiera de los dos
+proyectos cambiando una variable en su `.env` — ver
+`../streamdeck-habits/CLAUDE.md#cambiar-de-proyecto-supabase-main--test`.
+
+**Un proyecto recién creado (o recreado) está completamente vacío** —
+`list_migrations`/`list_tables` devuelven `[]` hasta que se mergea algo a la
+rama que lo despliega. Un cliente apuntando ahí no da un error de
+configuración: PostgREST responde 404 `PGRST205` ("Could not find the table
+... in the schema cache") en cualquier vista o función. Antes de sospechar de
+las credenciales, comprueba `list_migrations` del proyecto en cuestión.
+
 ### Integración GitHub ↔ Supabase
 
-Conectada y verificada. Configuración actual (dashboard de Supabase → *Integrations*):
+Conectada y verificada en ambos proyectos. Configuración actual (dashboard de Supabase → *Integrations*):
 
 - Repo enlazado: `Carlosgd993/habits-core`, working directory `.` (busca `supabase/` en la raíz del repo).
-- **"Deploy to production" activado**, rama de producción `main`: cualquier merge/push a `main` aplica `supabase/migrations/` directamente al proyecto cloud. Ya no hace falta `supabase db push` manual para llegar a producción.
-- **Branching (preview databases por PR) desactivado** — es una función del plan Pro y no está contratado. Consecuencia importante: **no hay red de seguridad de un preview DB por PR**; un push a `main` va directo a producción sin pasar antes por una base de datos de prueba aislada. Verificar migraciones antes de mergear (con `supabase db push` a un proyecto local/staging, o revisión manual) sigue siendo responsabilidad de quien hace el cambio, no de la integración.
+- **"Deploy to production" activado**, una rama distinta por proyecto (ver tabla arriba): cualquier merge a esa rama aplica `supabase/migrations/` directamente al proyecto cloud correspondiente. Ya no hace falta `supabase db push` manual para llegar a producción.
+- **Branching (preview databases por PR) desactivado** — es una función del plan Pro y no está contratado. Consecuencia importante: **no hay red de seguridad de un preview DB por PR**; un merge a `main` o `develop` va directo a su proyecto sin pasar antes por una base de datos de prueba aislada. Verificar migraciones antes de mergear (con `supabase db push` a un proyecto local/staging, o revisión manual) sigue siendo responsabilidad de quien hace el cambio, no de la integración.
 
 ### Verificación tras aplicar migraciones
 
