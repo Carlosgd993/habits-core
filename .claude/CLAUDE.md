@@ -14,6 +14,7 @@ El repo es pequeño; esto es todo lo que hay:
 
 ```
 supabase/migrations/     9 ficheros SQL — el repo en la práctica (init + 4 vistas + 2 rpc + 2 rls)
+supabase/schemas/        Definición del ESTADO ACTUAL (tablas/vistas/RPC), mantenida a mano
 supabase/seed.sql        datos de prueba, uno de cada tipo. NO ejecutar en producción
 docs/contrato.md         Qué consumen los clientes.  Léelo entero antes de tocar nada
 docs/estructura-bd.md    Esquema completo: decisiones, ER y DDL de las tablas
@@ -34,6 +35,7 @@ mismo sitio donde está definido. No hay que ir encadenando `alter table`.
 | Consultar columnas/tipos de una tabla | `docs/estructura-bd.md` → `## Tablas` (una subsección por tabla, con DDL) |
 | Depurar un 401/403 desde un cliente | `20260724120600_rls_contract.sql` (los bloques de `grant`/`revoke`) |
 | Añadir una tabla nueva y saber si queda cerrada por defecto | `rls_auto_enable()` en `20260724120700_rls_auto_enable.sql` — activa RLS sola, pero los grants siguen siendo manuales |
+| Ver el estado actual del esquema sin reconstruirlo mentalmente leyendo las 9 migrations en orden | `supabase/schemas/` — ver sección siguiente |
 | Tocar zona horaria o el estado "hecho" | `20260724115900_init.sql` (`app_timezone()`, semilla de `statuses`) |
 
 **Antes de tocar nada, lee `docs/contrato.md`.** Es lo que define qué se puede romper.
@@ -106,6 +108,58 @@ Romper una de estas rompe clientes ya desplegados, normalmente en silencio:
 2. **El cuerpo de una vista o función se puede reescribir entero.** Es justo para eso que existe la indirección.
 3. **Ningún cliente envía fechas** — las decide `app_today()`.
 4. **Ningún cliente conoce UUIDs de catálogo** (`statuses`, `projects`).
+
+## `supabase/schemas/` — definición del estado actual
+
+Las migrations son deltas históricos (aunque cada una describa un estado
+final, como se explica arriba); `supabase/schemas/` es otra cosa: una copia
+del estado actual de tablas, vistas y funciones RPC, partida en los mismos
+ocho conceptos que las migrations correspondientes (`01_functions.sql` ..
+`08_rpc_tasks.sql`), pensada para que un humano o un LLM vea el esquema de
+un vistazo sin reconstruirlo mentalmente leyendo 9 ficheros en orden.
+
+**No se despliega.** La integración GitHub↔Supabase sigue aplicando
+`supabase/migrations/`, no `supabase/schemas/`. Este directorio no es un
+mecanismo de CI ni de arranque: es documentación ejecutable y la base para
+reconstruir la BD en otro sitio (ver más abajo).
+
+**Se mantiene a mano, no se genera.** Supabase tiene una feature nativa
+("declarative schemas") que genera migrations automáticamente comparando
+`schemas/` contra el historial (`supabase db diff`) — pero requiere el CLI
+instalado (y Docker), que este repo no tiene instalado por
+ahora. Mientras tanto, **todo cambio estructural edita el fichero de
+`schemas/` correspondiente Y la migration nueva, en el mismo commit.** Si
+algún día se instala el CLI, esto se puede automatizar; hasta entonces es
+sincronización manual, igual de mecánica que escribir hoy una migration.
+Investigado también: `db diff` no captura de forma fiable `grant`/`revoke`,
+`security_invoker` en vistas, ni DML — por eso, aunque se automatizara,
+`rls_contract.sql` y `rls_auto_enable.sql` seguirían fuera de `schemas/`
+(ver siguiente punto).
+
+**Qué queda fuera, a propósito:** `rls_contract.sql` (grants + `enable row
+level security`) y `rls_auto_enable.sql` (el event trigger). No son
+"estructura" en el sentido de CREATE TABLE/VIEW/FUNCTION — son una barrida
+de revoke/grant y un trigger de infraestructura, y este repo ya trata los
+grants como un paso manual y deliberado por diseño (ver "El contrato" más
+arriba: "una función nueva nace cerrada y necesita su grant explícito").
+Fusionarlos con la definición estructural no aportaría nada y sí un lugar
+más donde una automatización futura podría fallar en silencio justo en la
+pieza que más importa proteger.
+
+**Reconstruir la base desde cero en otro sitio**, sin tocar
+`supabase/migrations/` ni depender del CLI:
+
+1. Aplicar `supabase/schemas/*.sql` en orden (`01` → `08`) — con `psql`, el
+   SQL Editor del dashboard, o MCP `execute_sql`.
+2. Aplicar la semilla mínima (vive solo en `init.sql`, no en `schemas/`,
+   porque es DML):
+   ```sql
+   insert into statuses (name, sort_order, is_done) values ('Hecho', 100, true);
+   ```
+3. Aplicar `rls_contract.sql` y luego `rls_auto_enable.sql`, en ese orden
+   (el segundo va después porque `create event trigger` puede fallar según
+   el rol, y no debe arrastrar los grants del primero — misma razón por la
+   que están en ficheros separados en `migrations/`).
 
 ## Cosas que no se deducen leyendo el SQL
 
