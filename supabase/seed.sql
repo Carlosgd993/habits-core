@@ -107,11 +107,13 @@ values ('e0000000-0000-0000-0000-00000000000b', 'bbbb0000-0000-0000-0000-0000000
 on conflict (id) do nothing;
 
 -- C. Repetible SIN TIEMPO (none, se instancia a demanda) -----------------------
-insert into task_templates (id, title, project_id, priority, subtasks, schedule_type)
+-- Es el caso de show_in_deck: no la materializa nadie, la crea el usuario desde
+-- la pantalla "Crear" del deck cuando le toca.
+insert into task_templates (id, title, project_id, priority, subtasks, schedule_type, show_in_deck)
 values ('d0000000-0000-0000-0000-00000000000c', 'Cambiar las sabanas',
         'bbbb0000-0000-0000-0000-000000000001', 0,
         '[{"title": "Quitar sabanas", "sort_order": 0}, {"title": "Poner limpias", "sort_order": 1}]',
-        'none')
+        'none', true)
 on conflict (id) do nothing;
 
 insert into tasks (id, project_id, template_id, title, priority, due_date)
@@ -139,7 +141,16 @@ insert into tasks (id, project_id, template_id, title, priority, due_date) value
      date_trunc('day', now()) + interval '21 hour')
 on conflict (id) do nothing;
 
--- E. Tarea UNICA (sin plantilla, template_id NULL). Vencida ayer -> overdue -----
+-- E. Creacion rapida SIN ocurrencia abierta (show_in_deck) ---------------------
+-- A diferencia de C, esta no tiene ninguna ocurrencia pendiente sembrada: es la
+-- que sirve para probar el boton de la pantalla "Crear" de la Stream Deck (C
+-- saldria ya en gris, porque su ocurrencia de hoy existe).
+insert into task_templates (id, title, project_id, priority, schedule_type, show_in_deck)
+values ('d0000000-0000-0000-0000-00000000000e', 'Cita peluquero',
+        'bbbb0000-0000-0000-0000-000000000001', 0, 'none', true)
+on conflict (id) do nothing;
+
+-- F. Tarea UNICA (sin plantilla, template_id NULL). Vencida ayer -> overdue -----
 insert into tasks (id, project_id, template_id, title, priority, due_date)
 values ('e0000000-0000-0000-0000-00000000000e', 'bbbb0000-0000-0000-0000-000000000001',
         null, 'Llamar al dentista', 5,
@@ -163,4 +174,9 @@ on conflict (id) do nothing;
 --   update task_templates set active = false where id = 'd0000000-0000-0000-0000-00000000000b';
 --   select complete_task('<id de la ultima ocurrencia>');
 --     -> debe cerrarse SIN error y SIN crear otra: desactivar para la cadena.
+--   select title, show_in_deck from v_templates where show_in_deck;
+--     -> "Cambiar las sabanas" y "Cita peluquero": las de la pantalla "Crear".
+--   select instantiate_task('d0000000-0000-0000-0000-00000000000e');  -- cita peluquero
+--   select title, due_day from v_today_tasks where title = 'Cita peluquero';
+--     -> debe SALIR, con due_day = hoy: sin p_due la ocurrencia vence ahora.
 -- =============================================================================
