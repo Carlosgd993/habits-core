@@ -25,8 +25,9 @@
 @base    = {{$dotenv SUPABASE_URL}}
 @apikey  = {{$dotenv SUPABASE_PUBLISHABLE_KEY}}
 
-@habit_id = 31c17dce-2656-404f-846b-9878b0bc3a95
-@task_id  = 185ea396-238b-428b-bd42-ce55114a3e67
+@habit_id    = 31c17dce-2656-404f-846b-9878b0bc3a95
+@task_id     = 185ea396-238b-428b-bd42-ce55114a3e67
+@template_id = d0000000-0000-0000-0000-00000000000e
 
 ###############################################################################
 # LECTURA
@@ -44,9 +45,30 @@ GET {{base}}/v_today_tasks?select=*&order=sort_order
 apikey: {{apikey}}
 Accept: application/json
 
+### Plantillas de creacion rapida (las que pinta la pantalla "Crear" del deck)
+# El filtro show_in_deck=eq.true lo pone el cliente: no hay vista aparte, para
+# que la PWA siga viendo todas las activas con el mismo grant.
+# La vista ya ordena por title, pero el orden va explicito igual que en el resto.
+GET {{base}}/v_templates?select=id,title,priority&show_in_deck=eq.true&order=title
+apikey: {{apikey}}
+Accept: application/json
+
 ###############################################################################
 # ESCRITURA -- todo via RPC, nunca POST/PATCH directo a una tabla
 ###############################################################################
+
+### Crear una tarea a partir de una plantilla
+# Sin p_due la ocurrencia vence AHORA, asi que aparece ya en v_today_tasks: es
+# lo que valida que instantiate_task no la deja invisible. Devuelve el uuid nuevo.
+# OJO: NO es idempotente. Dos llamadas -> dos tareas.
+POST {{base}}/rpc/instantiate_task
+apikey: {{apikey}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "p_template_id": "{{template_id}}"
+}
 
 ### Avanzar un hábito un paso (Boolean -> goal, Real -> +step sin tope)
 # Devuelve el nuevo total. Ningún cliente manda una fecha: la decide app_today().

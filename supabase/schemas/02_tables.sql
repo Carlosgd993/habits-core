@@ -192,6 +192,7 @@ create table task_templates (
     times_of_day  time[] not null default '{}',
     anchor_date   date,
     active        boolean not null default true,
+    show_in_deck  boolean not null default false,
     created_at    timestamptz not null default now(),
     updated_at    timestamptz not null default now(),
 
@@ -212,6 +213,10 @@ comment on column task_templates.subtasks is
     'Array JSON de subtareas: [{"title": "...", "sort_order": 0}, ...]. Se copian al instanciar.';
 comment on column task_templates.times_of_day is
     'Horas fijas para materializar varias ocurrencias el mismo dia (p.ej. pastilla 09/14/21).';
+comment on column task_templates.show_in_deck is
+    'Si true, la plantilla se ofrece como boton de creacion rapida en los clientes '
+    '(pantalla "Crear" de la Stream Deck). Independiente de active y de schedule_type: '
+    'opt-in explicito, una plantilla nueva no aparece sola.';
 
 -- -----------------------------------------------------------------------------
 -- tasks -- las OCURRENCIAS concretas

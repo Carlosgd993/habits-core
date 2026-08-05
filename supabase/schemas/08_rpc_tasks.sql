@@ -26,6 +26,10 @@
 -- id de la ocurrencia nueva. Es el "solo hay que crear un registro y arrastra
 -- todo lo de esa tarea": la llaman pg_cron (fijas), complete_task (deslizantes)
 -- y el usuario/app (repetibles sin tiempo).
+--
+-- Sin p_due la ocurrencia vence AHORA. Es deliberado: con due_date null no
+-- aparece en v_today_tasks y el usuario no ve nada al crearla. La fecha la pone
+-- la base, nunca el cliente (regla 3 del contrato).
 -- -----------------------------------------------------------------------------
 create or replace function instantiate_task(p_template_id uuid, p_due timestamptz default null)
     returns uuid
@@ -44,8 +48,15 @@ begin
             using errcode = 'no_data_found';
     end if;
 
+    -- task_templates.project_id es nullable pero tasks.project_id no lo es:
+    -- sin esta guarda seria un 23502 cripitico.
+    if tpl.project_id is null then
+        raise exception 'La plantilla % no tiene proyecto asignado', p_template_id
+            using errcode = 'no_data_found';
+    end if;
+
     insert into tasks (project_id, template_id, title, priority, due_date)
-    values (tpl.project_id, tpl.id, tpl.title, tpl.priority, p_due)
+    values (tpl.project_id, tpl.id, tpl.title, tpl.priority, coalesce(p_due, now()))
     returning id into new_id;
 
     for item in select * from jsonb_array_elements(coalesce(tpl.subtasks, '[]'::jsonb))
@@ -61,7 +72,8 @@ end;
 $$;
 
 comment on function instantiate_task(uuid, timestamptz) is
-    'Crea una ocurrencia (tasks) desde una plantilla, copiando sus subtareas. Devuelve el id nuevo.';
+    'Crea una ocurrencia (tasks) desde una plantilla, copiando sus subtareas. '
+    'Sin p_due vence ahora, para que sea visible en v_today_tasks. Devuelve el id nuevo.';
 
 -- -----------------------------------------------------------------------------
 -- chain_next_occurrence -- la regla deslizante, en UN solo sitio
