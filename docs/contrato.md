@@ -109,13 +109,21 @@ clientes no la tocan directamente. Se lee vía `v_templates` y se instancia vía
 ### `v_templates`
 
 `id`, `title`, `project_id`, `priority`, `schedule_type`, `interval_n`,
-`bymonthday`, `subtask_count`, `created_at`
+`bymonthday`, `subtask_count`, `created_at`, `show_in_deck`
 
 Plantillas con `active = true`, ordenadas por `title`. Es justo lo necesario
-para que la PWA pinte una fila y llame a `instantiate_task(id)`: no expone
+para que un cliente pinte una fila y llame a `instantiate_task(id)`: no expone
 `anchor_date` ni el jsonb crudo de `subtasks` — de eso se encarga
 `instantiate_task` por dentro. `subtask_count` evita mandar el jsonb entero al
 cliente solo para mostrar "3 subtareas".
+
+`show_in_deck` marca las plantillas de **creación rápida**: las que se ofrecen
+como botón para que el usuario cree la ocurrencia a mano, típicamente tareas que
+se repiten sin momento fijo ("Cita peluquero"). Es un eje independiente de
+`active` y de `schedule_type`, y es **opt-in**: una plantilla nueva vale `false`.
+El filtrado es del cliente (`?show_in_deck=eq.true`), no hay vista aparte — así
+la PWA sigue viendo todas las activas. Lo consume la pantalla "Crear" del daemon
+`../streamdeck-habits`.
 
 ## Escritura
 
@@ -152,6 +160,18 @@ móvil a la vez no pierde un incremento.
 Crea una fila en `tasks` copiando `project_id`, `title` y `priority` de la
 plantilla, e inserta en `checklist_items` las subtareas definidas en el JSON de
 `task_templates.subtasks`. Devuelve el `id` de la ocurrencia nueva.
+
+**Sin `p_due`, la ocurrencia vence ahora** — por eso un cliente puede llamarla
+con un solo argumento y respetar igualmente la regla "ningún cliente envía
+fechas". No es un detalle cosmético: con `due_date` null la ocurrencia no sale
+en `v_today_tasks` (no hay inbox todavía), o sea que nacería invisible.
+
+**No es idempotente**: dos llamadas crean dos ocurrencias. Un cliente que ofrezca
+un botón de creación rápida debería mirar si ya hay una ocurrencia pendiente de
+esa plantilla (`v_today_tasks.template_id`) antes de volver a llamarla.
+
+Falla con `no_data_found` si la plantilla no existe, está inactiva, o no tiene
+`project_id` (`task_templates.project_id` es nullable pero `tasks.project_id` no).
 
 ### El enganche deslizante — común a `complete_task` y `skip_task`
 
