@@ -106,6 +106,7 @@ create table habits (
     goal              double precision not null default 1,
     step              double precision not null default 1,
     unit              text,
+    manual_entry      boolean not null default false,
     reminders         text[] not null default '{}',
     record_enable     boolean not null default false,
     section_id        uuid references habit_sections (id) on delete set null,
@@ -127,6 +128,7 @@ create table habits (
     updated_at        timestamptz not null default now(),
 
     constraint habits_type_chk       check (type in ('Boolean', 'Real')),
+    constraint habits_manual_entry_real_chk check (not manual_entry or type = 'Real'),
     constraint habits_purpose_chk    check (purpose in ('goal', 'log')),
     constraint habits_interval_n_chk check (interval_n >= 1),
     constraint habits_bymonthday_chk check (bymonthday is null or bymonthday between 1 and 31),
@@ -147,6 +149,9 @@ comment on column habits.schedule_type is
     'interval_calendar (n dias desde anchor_date; n=1 = diario) | weekly_days (byday, isodow 1..7) '
     '| weekly_quota (goal = veces por semana, cualquier dia) | monthly_day (bymonthday).';
 comment on column habits.byday is 'weekly_days: dias ISO (1=lunes .. 7=domingo).';
+comment on column habits.manual_entry is
+    'true = la tecla del deck abre un teclado numerico para fijar el valor exacto del dia '
+    '(via habit_set) en vez de sumar step (habit_step). Solo tiene sentido si type=''Real''.';
 
 -- -----------------------------------------------------------------------------
 -- habit_checkins -- registro diario de un habito
