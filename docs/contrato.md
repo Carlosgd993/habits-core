@@ -24,6 +24,12 @@ Antes de leer las vistas conviene no confundir:
 
 Son independientes: un hábito Boolean puede ser semanal; un Real puede ser diario.
 
+Hay un tercer eje, solo aplicable a `type = 'Real'`: `manual_entry` (boolean,
+`default false`). Si es `true`, el cliente debe pedir al usuario el valor
+exacto de hoy y fijarlo con `habit_set` en vez de sumar `step` con
+`habit_step` (p.ej. un hábito "Peso": no tiene sentido ir sumando de 1 en 1).
+Es opt-in por hábito, igual que `show_in_deck` lo es por plantilla.
+
 ### schedule_type de hábitos
 
 | Valor | Toca hoy si… | `current_value` devuelve |
@@ -45,7 +51,7 @@ Son independientes: un hábito Boolean puede ser semanal; un Real puede ser diar
 ### `v_today_habits`
 
 `id`, `name`, `icon_res`, `color`, `type`, `goal`, `step`, `unit`,
-`sort_order`, `section_id`, `current_value`, `done`, `day`
+`sort_order`, `section_id`, `current_value`, `done`, `day`, `manual_entry`
 
 Solo salen hábitos con `purpose = 'goal'` **y** cuyo `schedule_type` indica que
 hoy es un día que toca (ver tabla arriba). Un hábito sin programación nunca
@@ -130,7 +136,7 @@ la PWA sigue viendo todas las activas. Lo consume la pantalla "Crear" del daemon
 | Función | Efecto |
 | --- | --- |
 | `habit_step(p_habit_id)` → `float` | Avanza un paso. Devuelve el nuevo total |
-| `habit_set(p_habit_id, p_value)` → `float` | Fija el total exacto de hoy |
+| `habit_set(p_habit_id, p_value)` → `float` | Fija el total exacto de hoy. Para correcciones desde la PWA y para los hábitos `manual_entry` |
 | `habit_undo(p_habit_id)` → `float` | Retrocede un paso |
 | `instantiate_task(p_template_id, p_due)` → `uuid` | Crea una ocurrencia a partir de una plantilla |
 | `complete_task(p_task_id)` | Cierra una ocurrencia. Idempotente. Encadena la siguiente si es deslizante |

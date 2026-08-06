@@ -110,9 +110,15 @@ No confundir `type` con `schedule_type`:
 
 Son independientes. Un hábito Boolean puede ser semanal; un Real puede ser diario.
 
+Tercer eje, solo con sentido si `type = 'Real'`: `manual_entry` (boolean,
+`default false`, opt-in por hábito igual que `show_in_deck` lo es por
+plantilla). Si es `true`, el cliente pide el valor exacto de hoy y lo fija con
+`habit_set` en vez de sumar `step` con `habit_step` — es el caso de un hábito
+como "Peso", donde no tiene sentido ir sumando de 1 en 1.
+
 ### Lectura — cuatro vistas
 
-- `v_today_habits` → `id, name, icon_res, color, type, goal, step, unit, sort_order, section_id, current_value, done, day`
+- `v_today_habits` → `id, name, icon_res, color, type, goal, step, unit, sort_order, section_id, current_value, done, day, manual_entry`
   Solo hábitos `purpose='goal'` cuyo `schedule_type` indica que hoy toca. Un hábito no arrastra deuda (2/8 ayer → 0/8 hoy). `current_value` puede superar `goal` (10/8 válido). Para `weekly_quota`, `current_value` = nº de días con checkin en la semana ISO actual, no el valor del día de hoy. `done = current_value >= goal`.
 
   | `schedule_type` | Toca hoy si… |
@@ -146,7 +152,7 @@ Ciclo de vida de una ocurrencia:
 | Función | Qué hace |
 |---|---|
 | `habit_step(p_habit_id)` → `float` | La operación de "pulsar la tecla". `weekly_quota` → fija 1 en el día (idempotente); `Boolean` → salta a `goal`; `Real` → suma `step` sin tope. Upsert atómico. Falla con `no_data_found` si el hábito no existe o está archivado. |
-| `habit_set(p_habit_id, p_value)` → `float` | Fija el total exacto de hoy (`greatest(p_value, 0)`). Para correcciones desde la PWA. |
+| `habit_set(p_habit_id, p_value)` → `float` | Fija el total exacto de hoy (`greatest(p_value, 0)`). Para correcciones desde la PWA y para los hábitos `manual_entry`. |
 | `habit_undo(p_habit_id)` → `float` | Retrocede un paso. Boolean → 0; Real → `greatest(value - step, 0)`. Devuelve 0 si hoy no había checkin. |
 | `instantiate_task(p_template_id, p_due)` → `uuid` | Crea una ocurrencia en `tasks` desde una plantilla, copiando subtareas. **Sin `p_due` vence ahora** (con `due_date` null no saldría en `v_today_tasks`). **No es idempotente**: dos llamadas, dos ocurrencias. Devuelve el id de la nueva. |
 | `complete_task(p_task_id)` | Cierra la ocurrencia. **Idempotente**. Si la plantilla es `interval_completion`, crea la siguiente ocurrencia a `interval_n` días desde ahora (deslizante). |
@@ -242,6 +248,7 @@ pieza que más importa proteger.
 - **El linter de Supabase da cuatro tipos de aviso asumidos, y hay que distinguirlos de uno real.** `rls_enabled_no_policy` (INFO) en las 11 tablas — es literalmente el diseño: RLS activo y sin políticas es lo que las deja cerradas, y los clientes entran por vistas y RPC `security definer`; si a una tabla le apareciera una política, eso sí habría que mirarlo—, `security_definer_view` en las 4 vistas (es el mecanismo: sin él, `anon` no puede leer nada — "arreglarlo" con `security_invoker = true` las deja devolviendo cero filas y sin error), `function_search_path_mutable` en `app_today()`/`app_timezone()` (son `security invoker`, no escalan privilegios, y la cláusula `SET` les quitaría el inlining en los predicados de las vistas), y `anon_security_definer_function_executable` en las 8 funciones del contrato (`habit_step`, `habit_set`, `habit_undo`, `instantiate_task`, `complete_task`, `uncomplete_task`, `skip_task`, `unskip_task`) — es literalmente el contrato funcionando, `anon` debe poder llamarlas. Si ese aviso apareciera en una función que NO está en la tabla de "Escritura" de `docs/contrato.md` (p.ej. `chain_next_occurrence`), eso sí es una fuga real: significa que su `grant` se coló donde no debía. Cualquier otro aviso hay que mirarlo.
 - **`app_timezone()` necesita su propio `grant execute ... to anon`, aunque ningún cliente la llame directamente.** Es `security invoker` (igual que `app_today()`, que la llama por dentro) y una función invoker llamada desde dentro de una vista comprueba el `EXECUTE` contra el rol que hace la consulta (`anon`), no contra el dueño de la vista. Sin ese grant, `v_today_habits`, `v_log_habits` y `v_today_tasks` — las tres vistas que usan la fecha — fallan con `permission denied for function app_timezone`, un 401 que no delata cuál es la función culpable. `v_templates` no la usa y por eso es la única que no lo nota. Se descubrió aplicando las migraciones de verdad contra un proyecto de test; no se ve leyendo el SQL.
 - **El Data API ya no expone nada solo.** Desde el cambio de Supabase de 2026-04-28, una tabla o vista nueva de `public` no aparece en `/rest/v1` por existir: lo que la da de alta es su `GRANT`. Los grants de `rls_contract.sql` son a la vez el mínimo privilegio y el alta en la API. Una vista que responde 404 casi siempre es un `grant` que falta, no SQL roto.
+- **`create or replace view` no admite insertar una columna nueva en medio de la lista, solo al final.** Postgres lo trata como "renombrar" la columna existente que ocupe esa posición y falla (`cannot change name of view column "x" to "y"`). Se descubrió añadiendo `manual_entry` a `v_today_habits`: hubo que ponerla la última del `select`, después de `day`, en vez de junto a sus columnas relacionadas (`unit`). Si una columna nueva "tiene que" ir en medio por legibilidad, no se puede — va al final y punto.
 - **Las claves nuevas (`sb_publishable_…`) no son JWT.** Van **solo** en la cabecera `apikey`. Si además viajan en `Authorization: Bearer`, PostgREST intenta parsearlas como JWT y devuelve `Invalid JWT`. Con las claves legacy `anon` sí colaba, así que es un fallo típico al migrar — y estuvo en `tools/supabase.http` hasta que se quitó.
 
 ## Comandos
