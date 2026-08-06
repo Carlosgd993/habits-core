@@ -166,9 +166,13 @@ con un solo argumento y respetar igualmente la regla "ningún cliente envía
 fechas". No es un detalle cosmético: con `due_date` null la ocurrencia no sale
 en `v_today_tasks` (no hay inbox todavía), o sea que nacería invisible.
 
-**No es idempotente**: dos llamadas crean dos ocurrencias. Un cliente que ofrezca
-un botón de creación rápida debería mirar si ya hay una ocurrencia pendiente de
-esa plantilla (`v_today_tasks.template_id`) antes de volver a llamarla.
+**Como mucho una ocurrencia pendiente por plantilla**: si ya hay una (ni completada
+ni omitida), no crea otra — adelanta el `due_date` de la existente a
+`coalesce(p_due, now())` y devuelve su `id`. Esto cubre el caso en que
+`chain_next_occurrence` ya encadenó la siguiente con vencimiento futuro (fuera
+de `v_today_tasks`, y por tanto invisible para un cliente) y el usuario pulsa
+el botón de creación rápida antes de esa fecha: la tarea se adelanta a hoy en
+vez de duplicarse.
 
 Falla con `no_data_found` si la plantilla no existe, está inactiva, o no tiene
 `project_id` (`task_templates.project_id` es nullable pero `tasks.project_id` no).

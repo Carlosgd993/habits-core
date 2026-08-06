@@ -30,6 +30,10 @@
 -- Sin p_due la ocurrencia vence AHORA. Es deliberado: con due_date null no
 -- aparece en v_today_tasks y el usuario no ve nada al crearla. La fecha la pone
 -- la base, nunca el cliente (regla 3 del contrato).
+--
+-- Como mucho una ocurrencia pendiente por plantilla: si ya hay una (ni
+-- completada ni omitida), no crea otra, adelanta el due_date de la existente
+-- a coalesce(p_due, now()) y devuelve su id.
 -- -----------------------------------------------------------------------------
 create or replace function instantiate_task(p_template_id uuid, p_due timestamptz default null)
     returns uuid
@@ -55,6 +59,20 @@ begin
             using errcode = 'no_data_found';
     end if;
 
+    -- Como mucho una ocurrencia pendiente por plantilla: si ya hay una, se
+    -- adelanta en vez de duplicar.
+    select id into new_id
+      from tasks
+     where template_id = p_template_id
+       and completed_time is null
+       and skipped_time is null
+     limit 1;
+
+    if found then
+        update tasks set due_date = coalesce(p_due, now()) where id = new_id;
+        return new_id;
+    end if;
+
     insert into tasks (project_id, template_id, title, priority, due_date)
     values (tpl.project_id, tpl.id, tpl.title, tpl.priority, coalesce(p_due, now()))
     returning id into new_id;
@@ -73,7 +91,9 @@ $$;
 
 comment on function instantiate_task(uuid, timestamptz) is
     'Crea una ocurrencia (tasks) desde una plantilla, copiando sus subtareas. '
-    'Sin p_due vence ahora, para que sea visible en v_today_tasks. Devuelve el id nuevo.';
+    'Si ya hay una pendiente de esa plantilla, no duplica: adelanta su due_date '
+    'a coalesce(p_due, now()) y devuelve su id. Sin p_due vence ahora, para que '
+    'sea visible en v_today_tasks.';
 
 -- -----------------------------------------------------------------------------
 -- chain_next_occurrence -- la regla deslizante, en UN solo sitio
