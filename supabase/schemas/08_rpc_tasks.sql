@@ -253,3 +253,34 @@ begin
     update tasks set skipped_time = null where id = p_task_id;
 end;
 $$;
+
+-- -----------------------------------------------------------------------------
+-- set_task_priority -- cambia la prioridad de una ocurrencia pendiente
+--
+-- La usa el menu de opciones de una tarea en el deck (mantener pulsado). Solo
+-- toca ocurrencias pendientes (ni completadas ni omitidas); sobre cualquier
+-- otro id no hace nada, ni falla.
+-- -----------------------------------------------------------------------------
+create or replace function set_task_priority(p_task_id uuid, p_priority smallint)
+    returns void
+    language plpgsql
+    security definer
+    set search_path = public
+as $$
+begin
+    if p_priority not in (0, 1, 3, 5) then
+        raise exception 'Prioridad % invalida (solo 0, 1, 3 o 5)', p_priority
+            using errcode = 'check_violation';
+    end if;
+
+    update tasks
+       set priority = p_priority
+     where id = p_task_id
+       and completed_time is null
+       and skipped_time is null;
+end;
+$$;
+
+comment on function set_task_priority(uuid, smallint) is
+    'Cambia la prioridad (0/1/3/5) de una ocurrencia pendiente. No hace nada si '
+    'ya esta completada u omitida, o si no existe.';

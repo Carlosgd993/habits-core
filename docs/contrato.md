@@ -143,6 +143,7 @@ la PWA sigue viendo todas las activas. Lo consume la pantalla "Crear" del daemon
 | `uncomplete_task(p_task_id)` | Reabre una ocurrencia |
 | `skip_task(p_task_id)` | Marca la ocurrencia como omitida (sale de la vista, queda registrada). Idempotente. Encadena la siguiente igual que `complete_task` |
 | `unskip_task(p_task_id)` | Deshace el omitido |
+| `set_task_priority(p_task_id, p_priority)` | Cambia la prioridad (`0`/`1`/`3`/`5`) de una ocurrencia pendiente. No hace nada si ya está completada/omitida o no existe |
 
 Más `app_today()`. **Esta tabla es exhaustiva**: cualquier otra función que
 exista en la base es interna y no es llamable con la clave pública, aunque
