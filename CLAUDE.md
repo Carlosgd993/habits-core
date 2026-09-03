@@ -87,6 +87,7 @@ adelante, **todo cambio estructural es un delta en una migration nueva** (con su
 | Añadir/cambiar columnas de cualquier tabla | `supabase/schemas/02_tables.sql` **y** una migration nueva con el `alter table`. **No** edites `init.sql`: ya está aplicado en los dos proyectos |
 | Cambiar qué plantillas ve un cliente | `docs/contrato.md`, `supabase/schemas/06_view_templates.sql` |
 | Cambiar qué plantillas ofrece el deck como botón "Crear" | `task_templates.show_in_deck` (columna, no código): `update task_templates set show_in_deck = true where …` |
+| Cambiar qué etiquetas rápidas ofrece el deck en "Cronómetros" | `timer_labels.show_in_deck` (columna, no código); crear/archivar etiquetas es `insert`/`update timer_labels set archived_at = now()`, a mano por SQL — no hay cliente que las gestione |
 | Consultar columnas/tipos de una tabla | `docs/estructura-bd.md` → `## Tablas` (una subsección por tabla, con DDL) |
 | Depurar un 401/403 desde un cliente | `20260724120600_rls_contract.sql` (los bloques de `grant`/`revoke`) |
 | Añadir una tabla nueva y saber si queda cerrada por defecto | `rls_auto_enable()` en `20260724120700_rls_auto_enable.sql` — activa RLS sola, pero los grants siguen siendo manuales |
@@ -343,6 +344,7 @@ Implementado:
 - `task_templates` cerrada con RLS + vista `v_templates` para que los clientes listen plantillas
 - RLS automático en tablas nuevas de `public` (event trigger `rls_auto_enable`)
 - Creación rápida desde plantilla (`show_in_deck` + `instantiate_task` con vencimiento por defecto), consumida por la pantalla "Crear" de `../streamdeck-habits`
+- Cronómetros tipo Toggl Track (`timer_labels`, `time_entries`, `timer_toggle`, `v_timer_labels`, `v_running_timer`), consumidos por la pantalla "Cronómetros" de `../streamdeck-habits`
 
 Pendiente:
 - Materialización automática de ocurrencias fijas con `pg_cron` (tareas `interval_calendar` y `times_of_day`)

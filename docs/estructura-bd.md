@@ -25,7 +25,12 @@ Fuente: `.claude/ticktick-api-doc.md` (TickTick Open API) y los ficheros `tickti
   documenta en cada tabla.
 - **UUID nativo como PK** (`gen_random_uuid()`). No se guarda el id string de TickTick:
   no hay importación desde TickTick.
-- **Focus queda excluido** por decisión explícita (no se modela Pomodoro/Timing).
+- **Focus (Pomodoro/Timing) sigue excluido** por decisión explícita — no se
+  modela ninguna técnica de productividad. Lo que sí se añadió (2026-09) son
+  **cronómetros tipo Toggl Track** (`timer_labels`/`time_entries`, ver
+  [`v_timer_labels`/`v_running_timer`](contrato.md#v_timer_labels--v_running_timer)):
+  llevar la cuenta de en qué se invierte el tiempo, sin ninguna técnica
+  asociada — es otro objetivo, no una reversión de esta decisión.
 - **Tipos nativos en vez de los formatos de transporte de la API:**
   - Fechas/horas con zona → `timestamptz` (TickTick las manda como `yyyy-MM-dd'T'HH:mm:ssZ`).
   - `stamp` / `targetStartDate` (enteros `YYYYMMDD`) → `date`.
@@ -423,7 +428,10 @@ create trigger trg_habit_checkins_updated  before update on habit_checkins  for 
 
 ## Fuera de alcance
 
-- **Focus** (Pomodoro/Timing): excluido por decisión de proyecto.
+- **Focus** (técnica Pomodoro/Timing en sí): excluido por decisión de
+  proyecto. No confundir con los cronómetros tipo Toggl Track
+  (`timer_labels`/`time_entries`), añadidos 2026-09 con otro objetivo (ver
+  [Decisiones de diseño](#decisiones-de-diseño)).
 - **`etag`, `year`, `permission`**: campos de transporte/compartición de la API; ver
   [Decisiones de diseño](#decisiones-de-diseño).
 - **Multi-usuario**: base personal, sin `user_id` ni tenancy.
