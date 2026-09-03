@@ -47,6 +47,8 @@ Es opt-in por hábito, igual que `show_in_deck` lo es por plantilla.
 | `v_log_habits` | Hábitos de solo registro (nunca pendientes) |
 | `v_today_tasks` | Ocurrencias de tarea pendientes con vencimiento hoy o antes |
 | `v_templates` | Plantillas activas, para crear tareas a partir de ellas |
+| `v_timer_labels` | Etiquetas rápidas de cronómetro activas |
+| `v_running_timer` | El cronómetro en marcha ahora mismo, si lo hay (0 o 1 fila) |
 
 ### `v_today_habits`
 
@@ -131,6 +133,23 @@ El filtrado es del cliente (`?show_in_deck=eq.true`), no hay vista aparte — as
 la PWA sigue viendo todas las activas. Lo consume la pantalla "Crear" del daemon
 `../streamdeck-habits`.
 
+### `v_timer_labels` / `v_running_timer`
+
+`v_timer_labels`: `id`, `name`, `color`, `sort_order`, `show_in_deck` — el
+catálogo de etiquetas rápidas de cronómetro (`timer_labels`, no archivadas).
+Mismo criterio de `show_in_deck` que `v_templates`: opt-in, filtrado por el
+cliente. Se crean/archivan a mano por SQL, no hay ningún cliente que las
+gestione todavía.
+
+`v_running_timer`: `id`, `task_id`, `label_id`, `title`, `started_at` — el
+cronómetro en marcha ahora mismo (0 o 1 fila, garantizado por un índice único
+parcial sobre `time_entries`). `task_id`/`label_id` son mutuamente
+excluyentes (a lo sumo uno de los dos, o ninguno); `title` ya viene
+denormalizado, sin necesitar cruzar con `tasks`/`timer_labels`.
+
+Ambas tablas (`timer_labels`, `time_entries`) están cerradas con RLS: los
+clientes no las tocan directamente, solo estas dos vistas y `timer_toggle`.
+
 ## Escritura
 
 | Función | Efecto |
@@ -144,6 +163,7 @@ la PWA sigue viendo todas las activas. Lo consume la pantalla "Crear" del daemon
 | `skip_task(p_task_id)` | Marca la ocurrencia como omitida (sale de la vista, queda registrada). Idempotente. Encadena la siguiente igual que `complete_task` |
 | `unskip_task(p_task_id)` | Deshace el omitido |
 | `set_task_priority(p_task_id, p_priority)` | Cambia la prioridad (`0`/`1`/`3`/`5`) de una ocurrencia pendiente. No hace nada si ya está completada/omitida o no existe |
+| `timer_toggle(p_task_id, p_label_id)` | Alterna el cronómetro de una tarea o una etiqueta (exactamente uno de los dos argumentos). Si ya era el que corría, lo para; si no, para el que hubiera y arranca este |
 
 Más `app_today()`. **Esta tabla es exhaustiva**: cualquier otra función que
 exista en la base es interna y no es llamable con la clave pública, aunque
@@ -216,6 +236,29 @@ desaparece de `v_today_tasks` pero queda en `tasks` con su historia.
 `unskip_task` limpia `skipped_time`, pero **no borra la ocurrencia que se
 encadenó**: si la reabres, tendrás dos abiertas. Mismo comportamiento que
 `uncomplete_task`.
+
+**`complete_task` y `skip_task` paran también el cronómetro de la tarea** si
+seguía corriendo (`time_entries.stopped_at = now()`). Sin esto, cerrar una
+tarea con su cronómetro en marcha lo dejaría corriendo para siempre: la tarea
+sale de `v_today_tasks`, y con ella la única puerta del cliente para volver a
+pararlo.
+
+### timer_toggle
+
+Un único botón por tarea/etiqueta, no dos separados de "iniciar"/"parar": la
+función decide qué toca mirando el estado **real** en `time_entries`, nunca lo
+que el cliente cree — un cliente puede llevar minutos sin refrescar, y con una
+sola tecla para las dos direcciones equivocarse de sentido no es solo
+cosmético.
+
+- Recibe exactamente uno de `p_task_id`/`p_label_id` (nunca los dos, nunca
+  ninguno) — falla con `check_violation` si no.
+- Si la tarea ya está cerrada/omitida, o la etiqueta está archivada o no
+  existe, no hace nada.
+- Si esa misma tarea/etiqueta es la que está corriendo ahora, la para.
+- Si no, para cualquier otro cronómetro que estuviera corriendo (como mucho
+  uno a la vez, tipo Toggl) y arranca uno nuevo para esta, con `title`
+  denormalizado de `tasks.title`/`timer_labels.name` en ese momento.
 
 ## Reglas de evolución
 

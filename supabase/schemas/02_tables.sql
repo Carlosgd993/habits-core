@@ -315,6 +315,76 @@ create table task_tags (
 
 create index idx_task_tags_tag_id on task_tags (tag_id);
 
+-- -----------------------------------------------------------------------------
+-- timer_labels -- etiquetas rapidas de cronometro (vista "Cronometros")
+--
+-- Catalogo de acceso rapido, mismo patron que task_templates.show_in_deck:
+-- opt-in explicito, una etiqueta nueva no aparece sola en el deck. No se
+-- borra: se archiva (archived_at), porque una etiqueta usada en time_entries
+-- historicas tiene que seguir identificando esas filas.
+-- -----------------------------------------------------------------------------
+create table timer_labels (
+    id           uuid primary key default gen_random_uuid(),
+    name         text not null,
+    color        text,
+    sort_order   bigint not null default 0,
+    show_in_deck boolean not null default false,
+    archived_at  timestamptz,
+    created_at   timestamptz not null default now(),
+    updated_at   timestamptz not null default now()
+);
+
+comment on column timer_labels.show_in_deck is
+    'Si true, la etiqueta se ofrece como boton de acceso rapido en la vista '
+    '"Cronometros" de la Stream Deck. Opt-in explicito, igual que '
+    'task_templates.show_in_deck: una etiqueta nueva no aparece sola.';
+comment on column timer_labels.color is
+    '"#RRGGBB", opcional. Ningun cliente actual lo usa para pintar (el deck '
+    'distingue solo corriendo/parado); reservado para un cliente de analitica futuro.';
+
+-- -----------------------------------------------------------------------------
+-- time_entries -- cronometros (tipo Toggl Track)
+--
+-- Un bloque de tiempo, asociado como mucho a UNA tarea o UNA etiqueta rapida
+-- (nunca ambas: time_entries_task_xor_label_chk), o a ninguna de las dos (un
+-- cliente futuro con titulo libre). `title` se denormaliza al arrancar
+-- (copiado de tasks.title o timer_labels.name) para que la entrada historica
+-- conserve el titulo de su momento aunque la tarea/etiqueta cambie de nombre
+-- despues, y para que un cliente pueda pintar "que esta corriendo" sin join.
+--
+-- stopped_at is null = corriendo. Como mucho UNA fila corriendo a la vez,
+-- garantizado por time_entries_single_running_idx (no solo por la RPC).
+-- -----------------------------------------------------------------------------
+create table time_entries (
+    id         uuid primary key default gen_random_uuid(),
+    task_id    uuid references tasks (id) on delete set null,
+    label_id   uuid references timer_labels (id) on delete set null,
+    title      text not null,
+    started_at timestamptz not null default now(),
+    stopped_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+
+    constraint time_entries_task_xor_label_chk check (task_id is null or label_id is null)
+);
+
+create index idx_time_entries_task_id    on time_entries (task_id);
+create index idx_time_entries_label_id   on time_entries (label_id);
+create index idx_time_entries_started_at on time_entries (started_at);
+
+-- Indice unico parcial sobre una expresion constante, filtrado por
+-- "stopped_at is null": como mucho una fila puede cumplirlo a la vez. Mismo
+-- idiom que statuses_single_done_idx, aplicado a una condicion en vez de a
+-- una columna booleana directa.
+create unique index time_entries_single_running_idx on time_entries ((true)) where stopped_at is null;
+
+comment on column time_entries.stopped_at is
+    'NULL = el cronometro sigue corriendo. Como mucho una fila de toda la '
+    'tabla puede tenerlo a NULL (time_entries_single_running_idx).';
+comment on column time_entries.title is
+    'Denormalizado al arrancar desde tasks.title o timer_labels.name: conserva '
+    'el titulo de su momento aunque la tarea/etiqueta cambie despues.';
+
 
 -- =============================================================================
 -- Triggers de updated_at -- todas las tablas menos task_tags, que es una tabla
@@ -330,3 +400,5 @@ create trigger trg_task_templates_updated  before update on task_templates  for 
 create trigger trg_tasks_updated           before update on tasks           for each row execute function set_updated_at();
 create trigger trg_checklist_items_updated before update on checklist_items for each row execute function set_updated_at();
 create trigger trg_tags_updated            before update on tags            for each row execute function set_updated_at();
+create trigger trg_timer_labels_updated    before update on timer_labels    for each row execute function set_updated_at();
+create trigger trg_time_entries_updated    before update on time_entries    for each row execute function set_updated_at();

@@ -154,6 +154,13 @@ comment on function chain_next_occurrence(uuid) is
 --
 -- Idempotente: llamarla dos veces no reescribe la hora de completado ni duplica
 -- la ocurrencia siguiente.
+--
+-- Para el cronometro de esta tarea (time_entries), si sigue corriendo: se para
+-- aqui. Sin esto, completar una tarea con su cronometro en marcha lo dejaria
+-- corriendo para siempre -- la tarea desaparece de v_today_tasks, y con ella
+-- la unica puerta del deck para volver a pararlo. Va DESPUES de la guarda de
+-- idempotencia (if not found) a proposito: repetir la llamada sobre una tarea
+-- ya cerrada no debe tocar time_entries de nuevo (ya se paro la primera vez).
 -- -----------------------------------------------------------------------------
 create or replace function complete_task(p_task_id uuid)
     returns void
@@ -179,12 +186,16 @@ begin
         return;  -- ya cerrada/omitida o inexistente: idempotente
     end if;
 
+    update time_entries set stopped_at = now()
+     where task_id = p_task_id and stopped_at is null;
+
     perform chain_next_occurrence(v_template);
 end;
 $$;
 
 comment on function complete_task(uuid) is
-    'Cierra una ocurrencia. Idempotente. Si la plantilla es deslizante, crea la siguiente.';
+    'Cierra una ocurrencia. Idempotente. Si la plantilla es deslizante, crea la siguiente. '
+    'Para tambien el cronometro de esta tarea si seguia corriendo.';
 
 -- -----------------------------------------------------------------------------
 -- uncomplete_task -- reabre una tarea
@@ -214,6 +225,9 @@ $$;
 -- Por eso tampoco toca `status_id`: omitida no es "hecha".
 --
 -- Idempotente: omitir dos veces no reescribe la hora ni duplica la siguiente.
+--
+-- Igual que complete_task, para el cronometro de esta tarea si seguia
+-- corriendo (mismo motivo, mismo sitio: despues de la guarda de idempotencia).
 -- -----------------------------------------------------------------------------
 create or replace function skip_task(p_task_id uuid)
     returns void
@@ -235,13 +249,17 @@ begin
         return;  -- ya cerrada/omitida o inexistente: idempotente
     end if;
 
+    update time_entries set stopped_at = now()
+     where task_id = p_task_id and stopped_at is null;
+
     perform chain_next_occurrence(v_template);
 end;
 $$;
 
 comment on function skip_task(uuid) is
     'Marca una ocurrencia como omitida (no se hizo) y, si la plantilla es deslizante, crea la '
-    'siguiente igual que complete_task. Sale de la vista pero queda registrada. Idempotente.';
+    'siguiente igual que complete_task. Sale de la vista pero queda registrada. Idempotente. '
+    'Para tambien el cronometro de esta tarea si seguia corriendo.';
 
 create or replace function unskip_task(p_task_id uuid)
     returns void
