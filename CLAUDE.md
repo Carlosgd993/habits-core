@@ -345,6 +345,7 @@ Implementado:
 - RLS automático en tablas nuevas de `public` (event trigger `rls_auto_enable`)
 - Creación rápida desde plantilla (`show_in_deck` + `instantiate_task` con vencimiento por defecto), consumida por la pantalla "Crear" de `../streamdeck-habits`
 - Cronómetros tipo Toggl Track (`timer_labels`, `time_entries`, `timer_toggle`, `v_timer_labels`, `v_running_timer`), consumidos por la pantalla "Cronómetros" de `../streamdeck-habits`
+- `v_timer_daily_totals` (segundos acumulados hoy por tarea/etiqueta), consumida por el deck para mostrar el total del día en la tecla de un cronómetro parado
 
 Pendiente:
 - Materialización automática de ocurrencias fijas con `pg_cron` (tareas `interval_calendar` y `times_of_day`)
