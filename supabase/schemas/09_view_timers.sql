@@ -77,3 +77,27 @@ comment on view v_timer_daily_totals is
     'al menos un bloque hoy). task_id/label_id son mutuamente excluyentes, '
     'igual que en v_running_timer. Un bloque que siga corriendo cuenta hasta '
     'ahora mismo (coalesce con now()).';
+
+-- -----------------------------------------------------------------------------
+-- v_task_timer_totals -- tiempo acumulado de SIEMPRE por tarea (no por dia)
+--
+-- Solo tareas (a diferencia de v_timer_daily_totals, aqui no hay label_id):
+-- una etiqueta es un cajon recurrente entre dias (tiene sentido "cuanto hoy"),
+-- pero una tarea es una ocurrencia concreta -- lo que importa es cuanto se le
+-- ha dedicado en total mientras estuvo abierta, sin trocear por dia. Una fila
+-- por task_id con al menos un bloque, sumando TODOS sus bloques de
+-- time_entries sin filtrar por fecha. Igual que v_timer_daily_totals, un
+-- bloque que siga corriendo cuenta hasta este instante (coalesce con now()).
+-- -----------------------------------------------------------------------------
+create or replace view v_task_timer_totals as
+select te.task_id,
+       sum(extract(epoch from (coalesce(te.stopped_at, now()) - te.started_at)))::bigint as seconds_total
+  from time_entries te
+ where te.task_id is not null
+ group by te.task_id;
+
+comment on view v_task_timer_totals is
+    'Segundos acumulados de SIEMPRE por tarea (todos sus bloques de '
+    'time_entries, sin filtrar por dia -- al reves que v_timer_daily_totals). '
+    'Una fila por task_id con al menos un bloque. Un bloque que siga '
+    'corriendo cuenta hasta ahora mismo (coalesce con now()).';
