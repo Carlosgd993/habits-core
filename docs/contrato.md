@@ -50,6 +50,7 @@ Es opt-in por hábito, igual que `show_in_deck` lo es por plantilla.
 | `v_timer_labels` | Etiquetas rápidas de cronómetro activas |
 | `v_running_timer` | El cronómetro en marcha ahora mismo, si lo hay (0 o 1 fila) |
 | `v_timer_daily_totals` | Segundos acumulados hoy por tarea/etiqueta |
+| `v_task_timer_totals` | Segundos acumulados de siempre por tarea (no por día) |
 
 ### `v_today_habits`
 
@@ -155,8 +156,14 @@ con al menos un bloque hoy; no aparece la que no tenga ninguno. Mismo criterio
 de exclusión mutua que `v_running_timer`. Un bloque que siga corriendo cuenta
 hasta el instante de la consulta (`coalesce(stopped_at, now())`).
 
+`v_task_timer_totals`: `task_id`, `seconds_total` — segundos acumulados **de
+siempre** por tarea (sin filtrar por día, al revés que `v_timer_daily_totals`
+— una tarea es una ocurrencia concreta, no un cajón recurrente como una
+etiqueta). Una fila por cada `task_id` con al menos un bloque. Mismo criterio
+de "cuenta hasta ahora si sigue corriendo" que las otras dos.
+
 Ambas tablas (`timer_labels`, `time_entries`) están cerradas con RLS: los
-clientes no las tocan directamente, solo estas tres vistas y `timer_toggle`.
+clientes no las tocan directamente, solo estas cuatro vistas y `timer_toggle`.
 
 ## Escritura
 
