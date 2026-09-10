@@ -55,11 +55,17 @@ Es opt-in por hábito, igual que `show_in_deck` lo es por plantilla.
 ### `v_today_habits`
 
 `id`, `name`, `icon_res`, `color`, `type`, `goal`, `step`, `unit`,
-`sort_order`, `section_id`, `current_value`, `done`, `day`, `manual_entry`
+`sort_order`, `section_id`, `current_value`, `done`, `day`, `manual_entry`,
+`section_name`
 
 Solo salen hábitos con `purpose = 'goal'` **y** cuyo `schedule_type` indica que
 hoy es un día que toca (ver tabla arriba). Un hábito sin programación nunca
 aparece aquí.
+
+`section_name` es el `name` de `habit_sections` resuelto por la propia vista
+(`left join`), `NULL` si el hábito no tiene `section_id`. Así un cliente puede
+filtrar/agrupar por sección sin tener que resolver el UUID crudo de
+`section_id` por su cuenta.
 
 Un hábito **no arrastra deuda**: si ayer quedó en 2/8, hoy empieza en 0/8.
 `current_value` **puede superar** a `goal` — 10/8 es válido y deliberado.
