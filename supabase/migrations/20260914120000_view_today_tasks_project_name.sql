@@ -1,27 +1,16 @@
 -- =============================================================================
--- supabase/schemas/05_view_today_tasks.sql
+-- supabase/migrations/20260914120000_view_today_tasks_project_name.sql
 --
--- Definicion del ESTADO ACTUAL (no historia). Espejo de
--- supabase/migrations/20260724120200_view_today_tasks.sql.
+-- Expone project_name (nombre de projects) en v_today_tasks, resuelto via
+-- join, para que un cliente pueda filtrar/agrupar tareas por proyecto sin
+-- tener que resolver el UUID crudo de project_id por su cuenta (p.ej. una
+-- vista nueva del deck que muestre solo las tareas de un proyecto dado por
+-- nombre) -- mismo patron que 20260910120000_view_today_habits_section_name.sql
+-- aplico para section_name en v_today_habits.
 --
--- Contrato de LECTURA: las ocurrencias pendientes de hoy o antes.
---
--- A diferencia de los habitos, una tarea SI arrastra: si vencia el lunes y no se
--- hizo, sigue apareciendo el jueves (`due_day <= hoy`), marcada con `overdue`.
---
--- Se excluyen:
---   - las hechas    (completed_time)
---   - las omitidas  (skipped_time): "no me la tome", no vuelve a salir
---   - las SIN fecha: con 12 teclas utiles en la Stream Deck, el inbox entero
---     inundaria la pantalla. Cuando haga falta, iran en una vista aparte
---     (`v_inbox_tasks`), no aqui.
---
--- El dia de vencimiento se calcula en la zona de la tarea si la tiene
--- (`time_zone`), y si no en la del ecosistema (`app_timezone()`).
---
--- Si cambias algo aqui, cambia tambien la migration correspondiente en el
--- mismo commit -- no hay generacion automatica (no hay Supabase CLI instalado).
+-- No se toca v_templates: fuera de alcance de este cambio.
 -- =============================================================================
+
 -- project_name va al FINAL de la lista de columnas a proposito: Postgres no
 -- admite insertar una columna nueva en medio de una vista via
 -- `create or replace view` (lo trata como un rename de la columna que ocupaba

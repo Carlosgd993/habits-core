@@ -88,7 +88,7 @@ cualquier hábito.
 ### `v_today_tasks`
 
 `id`, `title`, `priority`, `project_id`, `sort_order`, `due_date`,
-`template_id`, `due_day`, `overdue`, `day`
+`template_id`, `due_day`, `overdue`, `day`, `project_name`
 
 Muestra **ocurrencias** (filas de `tasks`) que cumplen:
 
@@ -98,6 +98,12 @@ Muestra **ocurrencias** (filas de `tasks`) que cumplen:
 
 Una tarea **sí arrastra**: si venció el lunes y no se hizo, sigue apareciendo
 con `overdue = true`. Las tareas **sin fecha no salen aquí**.
+
+`project_name` es el `name` de `projects` resuelto por la propia vista
+(`left join`), `NULL` si `project_id` no resuelve (no debería pasar, es
+`not null` en `tasks`) — mismo patrón que `section_name` en `v_today_habits`.
+Así un cliente puede filtrar/agrupar por proyecto sin tener que resolver el
+UUID crudo de `project_id` por su cuenta.
 
 #### Ciclo de vida de una ocurrencia
 
