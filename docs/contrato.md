@@ -287,6 +287,26 @@ cosmético.
   uno a la vez, tipo Toggl) y arranca uno nuevo para esta, con `title`
   denormalizado de `tasks.title`/`timer_labels.name` en ese momento.
 
+## Quién puede entrar
+
+El contrato está abierto a dos roles, con **exactamente** la misma superficie:
+
+| Rol | Cómo se llega | Quién lo usa |
+| --- | --- | --- |
+| `anon` | Clave publishable sola, en la cabecera `apikey` | El daemon `../streamdeck-habits` |
+| `authenticated` | Sesión de Supabase Auth (el JWT viaja en `Authorization: Bearer`) | La PWA `../PWA` |
+
+No hay ninguna vista ni función que uno pueda usar y el otro no. La diferencia
+es solo cómo se identifica el cliente, y existe porque una web publicada en
+internet no puede depender de una clave que va en su propio JavaScript.
+
+Las tablas siguen cerradas para los dos. Una vista o función nueva nace cerrada
+para los dos y necesita **dos** `grant` explícitos, no uno.
+
+Cerrar `anon` es el final previsto de este camino, pero no se puede hacer hasta
+que el daemon sepa iniciar sesión: mientras tanto, `anon` sigue siendo una
+puerta abierta para cualquiera que tenga la clave publishable.
+
 ## Reglas de evolución
 
 1. **A una vista se le añaden columnas. Nunca se le quitan ni se renombran.**
